@@ -153,8 +153,9 @@ async def on_message_edit(before: discord.Message, after: discord.Message):
     # Déclenché quand quelqu'un modifie son message
     # On traite UNIQUEMENT si la récolte vient d'être ajoutée pour la première fois
     # Si la récolte était déjà là avant la modif (ex: ajout opérateur), on ignore
-    recolte_avant = re.search(r"r[eé]coltes*:\s*(\d+)", before.content, re.IGNORECASE)
-    recolte_apres = re.search(r"r[eé]coltes*:\s*(\d+)", after.content, re.IGNORECASE)
+    recolte_avant = re.search(r"r[eé]colte\s*:\s*(\d+)", before.content, re.IGNORECASE)
+    recolte_apres = re.search(r"r[eé]colte\s*:\s*(\d+)", after.content, re.IGNORECASE)
+
 
     if recolte_apres and not recolte_avant:
         await traiter_message(after)
