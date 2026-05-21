@@ -13,25 +13,25 @@ SCOPES = [
 ]
 
 JOUR_TO_COL = {
-    "Dimanche": 3,
-    "Lundi":    4,
-    "Mardi":    5,
-    "Mercredi": 6,
-    "Jeudi":    7,
-    "Vendredi": 8,
-    "Samedi":   9,
+    "Dimanche": C,
+    "Lundi":    D,
+    "Mardi":    E,
+    "Mercredi": F,
+    "Jeudi":    G,
+    "Vendredi": H,
+    "Samedi":   I,
 }
 
-COL_NOM    = 12
-ROW_START  = 3
+COL_NOM    = L
+ROW_START  = 4
 SHEET_NAMES = ["Bonelli", "Faustin", "Gitans"]
 
 # Structure sheet cambus : Date=A, Membre=B, puis Objet1/Qté1/Objet2/Qté2...
 CAMBUS_SPREADSHEET_ID = os.getenv("CAMBUS_SPREADSHEET_ID", "")  # si sheet séparé
 # Si c'est le même spreadsheet que la récolte, laisse vide et ça utilisera SPREADSHEET_ID
-COL_CAMBUS_DATE        = 0   # colonne A
-COL_CAMBUS_MEMBRE      = 1   # colonne B
-COL_CAMBUS_OBJETS_START = 2  # colonne C
+COL_CAMBUS_DATE        = A   # colonne A
+COL_CAMBUS_MEMBRE      = B   # colonne B
+COL_CAMBUS_OBJETS_START = C  # colonne C
 MAX_OBJETS             = 10
 
 
