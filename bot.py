@@ -8,7 +8,6 @@ from users import USERS
 
 load_dotenv()
 
-# ─── Mapping channel Discord → onglet Google Sheet ───────────────────────────
 CHANNEL_TO_SHEET = {
     "champ-bonelli": "Bonelli",
     "champ-faustin": "Faustin",
@@ -25,14 +24,12 @@ JOURS_FR = {
     "Sunday":    "Dimanche",
 }
 
-# ─── ID Discord des admins autorisés à faire !newweek ────────────────────────
-# Pour trouver ton ID : Paramètres Discord → Avancé → Mode développeur ON
-# puis clic droit sur ton pseudo → "Copier l'identifiant"
+# Ton ID Discord — Paramètres → Avancé → Mode développeur ON → clic droit sur ton pseudo → Copier l'identifiant
 ADMIN_IDS = [
-    540873627629912084,  # remplace par ton vrai ID Discord
+    123456789012345678,  # remplace par ton vrai ID
 ]
 
-# ─── Parser le message ────────────────────────────────────────────────────────
+
 def parse_message(content: str):
     def get(pattern):
         m = re.search(pattern, content, re.IGNORECASE)
@@ -54,10 +51,11 @@ def parse_message(content: str):
         "matu":    matu    or "—",
     }
 
-# ─── Discord ──────────────────────────────────────────────────────────────────
+
 intents = discord.Intents.default()
 intents.message_content = True
 client = discord.Client(intents=intents)
+
 
 @client.event
 async def on_ready():
@@ -65,19 +63,19 @@ async def on_ready():
     print(f"   Channels actifs : {', '.join(CHANNEL_TO_SHEET.keys())}")
     print(f"   Opérateurs enregistrés : {len(USERS)}")
 
-@client.event
-async def on_message(message: discord.Message):
+
+async def traiter_message(message: discord.Message):
+    """Traite un message ou une modification de message."""
     if message.author.bot:
         return
 
-    # ── Commande !newweek (admin seulement) ───────────────────────────────────
+    # ── Commande !newweek ─────────────────────────────────────────────────────
     if message.content.strip().lower() == "!newweek":
         if message.author.id not in ADMIN_IDS:
             await message.reply("❌ Tu n'as pas la permission d'utiliser cette commande.")
             return
 
         await message.reply("⏳ Création de la nouvelle semaine en cours...")
-
         result = new_week()
 
         if result["success"]:
@@ -91,14 +89,19 @@ async def on_message(message: discord.Message):
             await message.reply(f"❌ Erreur : {result['reason']}")
         return
 
-    # ── Messages de récolte dans les channels ─────────────────────────────────
+    # ── Messages de récolte ───────────────────────────────────────────────────
     channel_name = message.channel.name.lower()
     if channel_name not in CHANNEL_TO_SHEET:
         return
 
+    # Si pas de récolte dans le message, on ignore silencieusement
+    # (ex: message envoyé au début du champ sans récolte encore)
+    data = parse_message(message.content)
+    if data is None:
+        return
+
     sheet_name = CHANNEL_TO_SHEET[channel_name]
 
-    # Récupère le nom sheet depuis le pseudo Discord
     pseudo = message.author.name.lower()
     nom_sheet = USERS.get(pseudo)
 
@@ -106,22 +109,6 @@ async def on_message(message: discord.Message):
         await message.reply(
             f"⚠️ Ton pseudo Discord **`{message.author.name}`** n'est pas enregistré.\n"
             f"Demande à l'admin de t'ajouter dans `users.py`.",
-            mention_author=True
-        )
-        return
-
-    data = parse_message(message.content)
-
-    if data is None:
-        await message.reply(
-            "❌ **Format invalide.** Utilise exactement :\n"
-            "```\n"
-            "Heure d'arrivée : 1h15\n"
-            "Heure de départ : 1h35\n"
-            "Matu : Oui\n"
-            "Récolte : 70\n"
-            "Opérateur : Sasou\n"
-            "```",
             mention_author=True
         )
         return
@@ -155,6 +142,24 @@ async def on_message(message: discord.Message):
             "❌ Erreur Google Sheets. Vérifie les logs du serveur.",
             mention_author=True
         )
+
+
+@client.event
+async def on_message(message: discord.Message):
+    await traiter_message(message)
+
+
+@client.event
+async def on_message_edit(before: discord.Message, after: discord.Message):
+    # Déclenché quand quelqu'un modifie son message
+    # On traite UNIQUEMENT si la récolte vient d'être ajoutée pour la première fois
+    # Si la récolte était déjà là avant la modif (ex: ajout opérateur), on ignore
+    recolte_avant = re.search(r"r[eé]coltes*:\s*(\d+)", before.content, re.IGNORECASE)
+    recolte_apres = re.search(r"r[eé]coltes*:\s*(\d+)", after.content, re.IGNORECASE)
+
+    if recolte_apres and not recolte_avant:
+        await traiter_message(after)
+
 
 # ─── Lancement ────────────────────────────────────────────────────────────────
 token = os.getenv("DISCORD_TOKEN")
