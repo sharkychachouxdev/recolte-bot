@@ -30,7 +30,7 @@ JOURS_FR = {
 }
 
 ADMIN_IDS = [
-    123456789012345678,  # remplace par ton vrai ID
+    540873627629912084,  # remplace par ton vrai ID
 ]
 
 # ─── MAPPING OBJETS CAMBUS ────────────────────────────────────────────────────
