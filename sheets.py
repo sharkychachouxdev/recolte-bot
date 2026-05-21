@@ -98,7 +98,7 @@ def append_cambus(date: str, member: str, items: list) -> bool:
         # Utilise CAMBUS_SPREADSHEET_ID si défini, sinon le spreadsheet principal
         sid = CAMBUS_SPREADSHEET_ID or os.getenv("SPREADSHEET_ID")
         spreadsheet = get_spreadsheet(sid)
-        ws = spreadsheet.sheet1  # première feuille
+        ws = spreadsheet.worksheet("Saisie") # première feuille
 
         next_row = len(ws.col_values(1)) + 1
 
