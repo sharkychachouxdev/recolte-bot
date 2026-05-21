@@ -1,44 +1,44 @@
-# ─── Correspondance pseudo Discord → Nom dans Google Sheet ───────────────────
+# ─── Correspondance ID Discord → Nom dans Google Sheet ───────────────────────
 #
 # Format :
-#   "pseudo_discord_exact" : "Nom Prénom exact dans le sheet colonne L"
+#   "ID_Discord" : "Nom Prénom exact dans le sheet colonne L"
 #
-# Le pseudo Discord c'est le "username" (sans le #0000),
-# pour le trouver : clic droit sur quelqu'un → "Copier le nom d'utilisateur"
+# Pour trouver l'ID de quelqu'un :
+#   Paramètres Discord → Avancé → active "Mode développeur"
+#   Clic droit sur le pseudo → "Copier l'identifiant"
 #
-# Exemple :
-#   "sasou"        → "Blossom Sasou"
-#   "kayla.runner" → "Kayla"
+# L'ID c'est une suite de chiffres genre : 123456789012345678
 
 USERS = {
-    "bgsmiley": "Noslig Greg",
-    "yendisnoslig": "Gilson Sidney",
-    "sharkychachoux": "Smith Selena",
-    "sasoux3": "Blossom Sasou",
-    "pedrinho.75": "Smith José",
-    "decoco8849": "Vince",
-    "sorryunknoww": "Paris Allan",
-    "war_n_sky": "Warren",
-    "maya._": "Luna",
-    "splitzer.": "Aleks",
-    "larziz78": "Larziz",
-    "hoshiko2807": "Lena",
-    "exod_28": "Brian",
-    "coy07775": "Hans",
-    "venum879": "Thomas",
-    "dracuemma": "Emma",
-    "ryze4389": "Jack",
-    "yan_ze13": "Mani",
-    "yureivlr": "Warren.F",
-    "kaylarabe": "Kayla",
-    "laterx_x": "Maxon",
-    "kvaatih": "Saîd",
-    "fannoo": "Elisa",
-    "heimzer": "Mobutri Seseseko",
-    "mellouk23": "Adel",
-    "maxans_59": "Maxans",
-    "sandracdr": "Sandra",
-    "ahmed_9202712": "Pablo",
-    "chatonmasochiste": "Rafaël",
+    "434591660501106688": "Noslig Greg",
+    "953032395970457681": "Gilson Sidney",
+    "540873627629912084": "Smith Selena",
+    "261556426005020682": "Blossom Sasou",
+    "679821636727472261": "Smith José",
+    "1096218148082044928": "Vince",
+    "384434828377980928": "Paris Allan",
+    "1439764282693648427": "Warren",
+    "773154983444611082": "Luna",
+    "617093557936848902": "Aleks",
+    "1050702624304926761": "Larziz",
+    "493202964073283584": "Lena",
+    "1233303645747941377": "Brian",
+    "1340689064252280974": "Hans",
+    "1059194948571902003": "Thomas",
+    "1458166292631523403": "Emma",
+    "764200156525756416": "Jack",
+    "1132006520620585060": "Mani",
+    "853978573203046440": "Warren.F",
+    "469529721269387284": "Kayla",
+    "472731621112545280": "Maxon",
+    "1462015339964403810": "Saîd",
+    "984864079686553680": "Elisa",
+    "703669681285890099": "Mobutri Seseseko",
+    "417408464432660490": "Adel",
+    "812388498790678558": "Maxans",
+    "282694092679413761": "Sandra",
+    "1094986534727471157": "Pablo",
+    "306176725082177538": "Rafaël",
+    "1011904371598041088": "Younes",
     # Ajoute autant de lignes que nécessaire...
 }
