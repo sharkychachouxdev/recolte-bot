@@ -3,16 +3,21 @@ import re
 import os
 from datetime import datetime
 from dotenv import load_dotenv
-from sheets import update_recolte, new_week
+from sheets import update_recolte, new_week, append_cambus
 from users import USERS
 
 load_dotenv()
 
+# ─── CHANNELS RÉCOLTE CHAMPS ──────────────────────────────────────────────────
 CHANNEL_TO_SHEET = {
     "champ-bonelli": "Bonelli",
     "champ-faustin": "Faustin",
     "champ-gitans":  "Gitans",
 }
+
+# ─── CHANNELS CAMBUS / DIGISCANNE ─────────────────────────────────────────────
+CHANNEL_CAMBUS     = int(os.getenv("CHANNEL_CAMBUS",     "0"))
+CHANNEL_DIGISCANNE = int(os.getenv("CHANNEL_DIGISCANNE", "0"))
 
 JOURS_FR = {
     "Monday":    "Lundi",
@@ -24,13 +29,155 @@ JOURS_FR = {
     "Sunday":    "Dimanche",
 }
 
-# Ton ID Discord — Paramètres → Avancé → Mode développeur ON → clic droit sur ton pseudo → Copier l'identifiant
 ADMIN_IDS = [
     123456789012345678,  # remplace par ton vrai ID
 ]
 
+# ─── MAPPING OBJETS CAMBUS ────────────────────────────────────────────────────
+ITEM_MAP = {
+    # Hameçons
+    "hamecon alu":            "Hameçon Aluminium",
+    "hameçon alu":            "Hameçon Aluminium",
+    "ham alu":                "Hameçon Aluminium",
+    "hamecon aluminium":      "Hameçon Aluminium",
+    "hameçon aluminium":      "Hameçon Aluminium",
+    "hamecon acier":          "Hameçon Acier",
+    "hameçon acier":          "Hameçon Acier",
+    "ham acier":              "Hameçon Acier",
+    "hamecon cobalt":         "Hameçon Cobalt",
+    "hameçon cobalt":         "Hameçon Cobalt",
+    "ham cobalt":             "Hameçon Cobalt",
+    "ham cobat":              "Hameçon Cobalt",
+    "ham cobalt":              "Hameçon Cobalt",
+    "hamecon titane":         "Hameçon Titane",
+    "hameçon titane":         "Hameçon Titane",
+    "hameçon titan":         "Hameçon Titane",
+    "hamecon titan":         "Hameçon Titane",
+    "ham titan":              "Hameçon Titane",
+    "ham titane":             "Hameçon Titane",
+    # Tendeur
+    "tendeur de cro":         "Tendeur de crochetage",
+    "tendeur cro":            "Tendeur de crochetage",
+    "tendeur de crochetage":  "Tendeur de crochetage",
+    "tendeur":                "Tendeur de crochetage",
+    # Kit réparation
+    "kit de répa":            "Kit réparation",
+    "kit de repa":            "Kit réparation",
+    "kit répa":               "Kit réparation",
+    "kit repa":               "Kit réparation",
+    "kit réparation":         "Kit réparation",
+    "kit reparation":         "Kit réparation",
+    # Pièces détachées
+    "pièces détachées":       "Pièces détachées",
+    "pieces detachees":       "Pièces détachées",
+    "pièces détacher":        "Pièces détachées",
+    "pieces detacher":        "Pièces détachées",
+    "pièce détachée":         "Pièces détachées",
+    "pièces détacher":        "Pièces détachées",
+    # Pile
+    "pile":                   "Pile Lithium",
+    "pile au lithium":        "Pile Lithium",
+    "pile lithium":           "Pile Lithium",
+    "pile lith":              "Pile Lithium",
+    "pile litium":              "Pile Lithium",
+    "pile lit":              "Pile Lithium",
+    "lithium":              "Pile Lithium",
+    "litium":              "Pile Lithium",
+    # Clé
+    "clé":                    "Clé",
+    "cle":                    "Clé",
+    # Téléphone
+    "téléphone":              "Téléphone",
+    "telephone":              "Téléphone",
+    "tel":              "Téléphone",
+    "tél":              "Téléphone",
+    # Chargeur
+    "chargeur pistolet":      "Chargeur de pistolet",
+    "chargeur de pistolet":   "Chargeur de pistolet",
+    "chargeur de pistol":   "Chargeur de pistolet",
+    "chargeur pistol":   "Chargeur de pistolet",
+    "charg de pistol":   "Chargeur de pistolet",
+    # Cannabis / Drogues
+    "cannabis":               "Cannabis",
+    "canna":               "Cannabis",
+    "graine cannabis":        "Graine cannabis",
+    "graine de cannabis":     "Graine cannabis",
+    "graine de canna":     "Graine cannabis",
+    "graine canna":     "Graine cannabis",
+    "cocaine":                "Cocaïne",
+    "cocaïne":                "Cocaïne",
+    "coca":                "Cocaïne",
+    "coco":                "Cocaïne",
+    "methamphétamine":        "Méthamphétamine",
+    "methamphetamine":        "Méthamphétamine",
+    "méth":                   "Méthamphétamine",
+    "meth":                   "Méthamphétamine",
+    "heroïne":                "Héroïne",
+    "heroine":                "Héroïne",
+    "hero":                "Héroïne",
+    "champignon":             "Champignon",
+    "champi":             "Champignon",
+    "champignon magique":     "Champignon magique",
+    "champi magique":             "Champignon magique",
+    "champi magic":             "Champignon magique",
+    "champignon magic":             "Champignon magique",
+    # Divers
+    "kit crochetage":         "Kit crochetage",
+    "canne à peche":          "Canne à pêche",
+    "canne a peche":          "Canne à pêche",
+    "canne à pêche":          "Canne à pêche",
+    "bijoux":                 "Bijoux",
+    "bijou":                  "Bijoux",
+    "kit nettoyage":          "Kit nettoyage",
+    "corde solide":           "Corde solide",
+    "corde":           "Corde solide",
+    "hache":                  "Hache en Pierre",
+    "hache en pierre":        "Hache en Pierre",
+    "carte pirate":           "Carte pirate",
+    "pirate":           "Carte pirate",
+    "lecteur carte pirate":   "Lecteur carte pirate",
+    "lecteur pirate":   "Lecteur carte pirate",
+}
 
-def parse_message(content: str):
+# ─── MAPPING ID DISCORD → NOM MEMBRE (sheet cambus) ──────────────────────────
+MEMBRES_CAMBUS = {
+    "434591660501106688":  "Noslig Greg",
+    "953032395970457681":  "Gilson Sidney",
+    "540873627629912084":  "Smith Selena",
+    "261556426005020682":  "Blossom Sasou",
+    "679821636727472261":  "Smith José",
+    "1096218148082044928": "Vince",
+    "384434828377980928":  "Paris Allan",
+    "1439764282693648427": "Warren",
+    "773154983444611082":  "Luna",
+    "617093557936848902":  "Aleks",
+    "1050702624304926761": "Larziz",
+    "493202964073283584":  "Lena",
+    "1233303645747941377": "Brian",
+    "1340689064252280974": "Hans",
+    "1059194948571902003": "Thomas",
+    "1458166292631523403": "Emma",
+    "764200156525756416":  "Jack",
+    "1132006520620585060": "Mani",
+    "853978573203046440":  "Warren.F",
+    "469529721269387284":  "Kayla",
+    "472731621112545280":  "Maxon",
+    "1462015339964403810": "Saîd",
+    "984864079686553680":  "Elisa",
+    "703669681285890099":  "Mobutri Seseseko",
+    "417408464432660490":  "Adel",
+    "812388498790678558":  "Maxans",
+    "282694092679413761":  "Sandra",
+    "1094986534727471157": "Pablo",
+    "306176725082177538":  "Rafaël",
+    "1011904371598041088": "Younes",
+}
+
+
+# ─── PARSERS ──────────────────────────────────────────────────────────────────
+
+def parse_recolte(content: str):
+    """Parse un message de récolte champ (Bonelli/Faustin/Gitans)."""
     def get(pattern):
         m = re.search(pattern, content, re.IGNORECASE)
         return m.group(1).strip() if m else None
@@ -39,7 +186,6 @@ def parse_message(content: str):
     arrivee = get(r"heure\s+d.arriv[eé]e\s*:\s*(.+)")
     depart  = get(r"heure\s+de\s+d[eé]part\s*:\s*(.+)")
     matu    = get(r"matu\s*:\s*(.+)")
-    # "Opérateur" présent dans le message mais ignoré volontairement
 
     if not recolte:
         return None
@@ -52,6 +198,43 @@ def parse_message(content: str):
     }
 
 
+def match_item(raw: str) -> str:
+    """Trouve le nom officiel d'un objet depuis son écriture brute."""
+    key = raw.lower().strip()
+    if key in ITEM_MAP:
+        return ITEM_MAP[key]
+    for pattern, official in ITEM_MAP.items():
+        if pattern in key or key in pattern:
+            return official
+    return raw.strip().capitalize()
+
+
+def parse_cambus(content: str) -> list:
+    """Parse un message cambus/digiscanne. Retourne une liste de {item, qty}."""
+    items = []
+    for line in content.strip().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        if re.match(r"op[eé]rat(eur|rice)\s*:", line, re.IGNORECASE):
+            continue
+        # Quantité devant : "4 hamecon alu" ou "x4 hamecon alu"
+        m = re.match(r"^[xX×]?(\d+)\s+(.+)$", line)
+        if m:
+            qty, raw_item = int(m.group(1)), m.group(2)
+        else:
+            # Quantité derrière : "hamecon alu 4"
+            m = re.match(r"^(.+?)\s+[xX×]?(\d+)$", line)
+            if m:
+                raw_item, qty = m.group(1), int(m.group(2))
+            else:
+                continue
+        items.append({"item": match_item(raw_item), "qty": qty})
+    return items
+
+
+# ─── BOT ──────────────────────────────────────────────────────────────────────
+
 intents = discord.Intents.default()
 intents.message_content = True
 client = discord.Client(intents=intents)
@@ -60,50 +243,26 @@ client = discord.Client(intents=intents)
 @client.event
 async def on_ready():
     print(f"✅  Bot connecté : {client.user}")
-    print(f"   Channels actifs : {', '.join(CHANNEL_TO_SHEET.keys())}")
-    print(f"   Opérateurs enregistrés : {len(USERS)}")
+    print(f"   Channels champs   : {', '.join(CHANNEL_TO_SHEET.keys())}")
+    print(f"   Channel cambus    : {CHANNEL_CAMBUS}")
+    print(f"   Channel digiscanne: {CHANNEL_DIGISCANNE}")
+    print(f"   Opérateurs champs : {len(USERS)}")
+    print(f"   Membres cambus    : {len(MEMBRES_CAMBUS)}")
 
 
-async def traiter_message(message: discord.Message):
-    """Traite un message ou une modification de message."""
-    if message.author.bot:
-        return
-
-    # ── Commande !newweek ─────────────────────────────────────────────────────
-    if message.content.strip().lower() == "!newweek":
-        if message.author.id not in ADMIN_IDS:
-            await message.reply("❌ Tu n'as pas la permission d'utiliser cette commande.")
-            return
-
-        await message.reply("⏳ Création de la nouvelle semaine en cours...")
-        result = new_week()
-
-        if result["success"]:
-            onglets = ", ".join(f"**{n}**" for n in result["new_names"])
-            await message.reply(
-                f"✅ Nouvelle semaine créée ! (semaine du {result['date']})\n"
-                f"Onglets remis à zéro : {onglets}\n"
-                f"Les anciennes feuilles sont masquées mais conservées pour tes comptes."
-            )
-        else:
-            await message.reply(f"❌ Erreur : {result['reason']}")
-        return
-
-    # ── Messages de récolte ───────────────────────────────────────────────────
+async def traiter_recolte(message: discord.Message):
+    """Traite un message de récolte champ (Bonelli / Faustin / Gitans)."""
     channel_name = message.channel.name.lower()
     if channel_name not in CHANNEL_TO_SHEET:
         return
 
-    # Si pas de récolte dans le message, on ignore silencieusement
-    # (ex: message envoyé au début du champ sans récolte encore)
-    data = parse_message(message.content)
+    data = parse_recolte(message.content)
     if data is None:
         return
 
     sheet_name = CHANNEL_TO_SHEET[channel_name]
-
-    user_id = str(message.author.id)
-    nom_sheet = USERS.get(user_id)
+    user_id    = str(message.author.id)
+    nom_sheet  = USERS.get(user_id)
 
     if nom_sheet is None:
         await message.reply(
@@ -122,7 +281,6 @@ async def traiter_message(message: discord.Message):
             jour=jour_fr,
             recolte=data["recolte"],
         )
-
         if result["success"]:
             await message.reply(
                 f"✅ **{sheet_name}** | {jour_fr} | **{nom_sheet}** → +{data['recolte']} ajouté | Total du jour : **{result['total']}**",
@@ -134,13 +292,67 @@ async def traiter_message(message: discord.Message):
                 f"Vérifie que le nom dans `users.py` correspond exactement à la colonne `Nom/Prénom` du sheet.",
                 mention_author=True
             )
-
     except Exception as e:
         print(f"[ERREUR SHEETS] {e}")
-        await message.reply(
-            "❌ Erreur Google Sheets. Vérifie les logs du serveur.",
-            mention_author=True
-        )
+        await message.reply("❌ Erreur Google Sheets. Vérifie les logs du serveur.", mention_author=True)
+
+
+async def traiter_cambus(message: discord.Message):
+    """Traite un message cambus ou digiscanne."""
+    items = parse_cambus(message.content)
+    if not items:
+        return
+
+    user_id     = str(message.author.id)
+    member_name = MEMBRES_CAMBUS.get(user_id)
+
+    if not member_name:
+        print(f"[CAMBUS] ID inconnu : {message.author.id} ({message.author.display_name})")
+        try:
+            await message.add_reaction("❓")
+        except Exception:
+            pass
+        return
+
+    date_str = datetime.now().strftime("%d/%m/%Y")
+
+    try:
+        success = append_cambus(date_str, member_name, items)
+        await message.add_reaction("✅" if success else "❌")
+    except Exception as e:
+        print(f"[ERREUR CAMBUS SHEETS] {e}")
+        await message.add_reaction("❌")
+
+
+async def traiter_message(message: discord.Message):
+    if message.author.bot:
+        return
+
+    # Commande !newweek
+    if message.content.strip().lower() == "!newweek":
+        if message.author.id not in ADMIN_IDS:
+            await message.reply("❌ Tu n'as pas la permission d'utiliser cette commande.")
+            return
+        await message.reply("⏳ Création de la nouvelle semaine en cours...")
+        result = new_week()
+        if result["success"]:
+            onglets = ", ".join(f"**{n}**" for n in result["new_names"])
+            await message.reply(
+                f"✅ Nouvelle semaine créée ! (semaine du {result['date']})\n"
+                f"Onglets remis à zéro : {onglets}\n"
+                f"Les anciennes feuilles sont masquées mais conservées pour tes comptes."
+            )
+        else:
+            await message.reply(f"❌ Erreur : {result['reason']}")
+        return
+
+    # Channels cambus / digiscanne
+    if message.channel.id in (CHANNEL_CAMBUS, CHANNEL_DIGISCANNE):
+        await traiter_cambus(message)
+        return
+
+    # Channels récolte champs
+    await traiter_recolte(message)
 
 
 @client.event
@@ -150,14 +362,8 @@ async def on_message(message: discord.Message):
 
 @client.event
 async def on_message_edit(before: discord.Message, after: discord.Message):
-    # Déclenché quand quelqu'un modifie son message
-    # On traite UNIQUEMENT si la récolte vient d'être ajoutée pour la première fois
-    # Si la récolte était déjà là avant la modif (ex: ajout opérateur), on ignore
     recolte_avant = re.search(r"r[eé]colte\s*:\s*(\d+)", before.content, re.IGNORECASE)
     recolte_apres = re.search(r"r[eé]colte\s*:\s*(\d+)", after.content, re.IGNORECASE)
-
-
-
     if recolte_apres and not recolte_avant:
         await traiter_message(after)
 
