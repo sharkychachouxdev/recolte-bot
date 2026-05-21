@@ -157,6 +157,7 @@ async def on_message_edit(before: discord.Message, after: discord.Message):
     recolte_apres = re.search(r"r[eé]colte\s*:\s*(\d+)", after.content, re.IGNORECASE)
 
 
+
     if recolte_apres and not recolte_avant:
         await traiter_message(after)
 
