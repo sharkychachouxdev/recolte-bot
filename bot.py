@@ -102,8 +102,8 @@ async def traiter_message(message: discord.Message):
 
     sheet_name = CHANNEL_TO_SHEET[channel_name]
 
-    pseudo = message.author.name.lower()
-    nom_sheet = USERS.get(pseudo)
+    user_id = str(message.author.id)
+    nom_sheet = USERS.get(user_id)
 
     if nom_sheet is None:
         await message.reply(
@@ -125,8 +125,7 @@ async def traiter_message(message: discord.Message):
 
         if result["success"]:
             await message.reply(
-                f"✅ **{sheet_name}** | {jour_fr} | "
-                f"**{nom_sheet}** → Récolte **{data['recolte']}** enregistrée !",
+                f"✅ **{sheet_name}** | {jour_fr} | **{nom_sheet}** → +{data['recolte']} ajouté | Total du jour : **{result['total']}**",
                 mention_author=True
             )
         else:
