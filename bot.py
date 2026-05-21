@@ -30,7 +30,7 @@ JOURS_FR = {
 }
 
 ADMIN_IDS = [
-    540873627629912084,  # remplace par ton vrai ID
+    123456789012345678,  # remplace par ton vrai ID
 ]
 
 # ─── MAPPING OBJETS CAMBUS ────────────────────────────────────────────────────
@@ -48,11 +48,8 @@ ITEM_MAP = {
     "hameçon cobalt":         "Hameçon Cobalt",
     "ham cobalt":             "Hameçon Cobalt",
     "ham cobat":              "Hameçon Cobalt",
-    "ham cobalt":              "Hameçon Cobalt",
     "hamecon titane":         "Hameçon Titane",
     "hameçon titane":         "Hameçon Titane",
-    "hameçon titan":         "Hameçon Titane",
-    "hamecon titan":         "Hameçon Titane",
     "ham titan":              "Hameçon Titane",
     "ham titane":             "Hameçon Titane",
     # Tendeur
@@ -73,54 +70,33 @@ ITEM_MAP = {
     "pièces détacher":        "Pièces détachées",
     "pieces detacher":        "Pièces détachées",
     "pièce détachée":         "Pièces détachées",
-    "pièces détacher":        "Pièces détachées",
     # Pile
     "pile":                   "Pile Lithium",
     "pile au lithium":        "Pile Lithium",
     "pile lithium":           "Pile Lithium",
     "pile lith":              "Pile Lithium",
-    "pile litium":              "Pile Lithium",
-    "pile lit":              "Pile Lithium",
-    "lithium":              "Pile Lithium",
-    "litium":              "Pile Lithium",
     # Clé
     "clé":                    "Clé",
     "cle":                    "Clé",
     # Téléphone
     "téléphone":              "Téléphone",
     "telephone":              "Téléphone",
-    "tel":              "Téléphone",
-    "tél":              "Téléphone",
     # Chargeur
     "chargeur pistolet":      "Chargeur de pistolet",
     "chargeur de pistolet":   "Chargeur de pistolet",
-    "chargeur de pistol":   "Chargeur de pistolet",
-    "chargeur pistol":   "Chargeur de pistolet",
-    "charg de pistol":   "Chargeur de pistolet",
     # Cannabis / Drogues
     "cannabis":               "Cannabis",
-    "canna":               "Cannabis",
     "graine cannabis":        "Graine cannabis",
     "graine de cannabis":     "Graine cannabis",
-    "graine de canna":     "Graine cannabis",
-    "graine canna":     "Graine cannabis",
     "cocaine":                "Cocaïne",
     "cocaïne":                "Cocaïne",
-    "coca":                "Cocaïne",
-    "coco":                "Cocaïne",
     "methamphétamine":        "Méthamphétamine",
     "methamphetamine":        "Méthamphétamine",
     "méth":                   "Méthamphétamine",
-    "meth":                   "Méthamphétamine",
     "heroïne":                "Héroïne",
     "heroine":                "Héroïne",
-    "hero":                "Héroïne",
     "champignon":             "Champignon",
-    "champi":             "Champignon",
     "champignon magique":     "Champignon magique",
-    "champi magique":             "Champignon magique",
-    "champi magic":             "Champignon magique",
-    "champignon magic":             "Champignon magique",
     # Divers
     "kit crochetage":         "Kit crochetage",
     "canne à peche":          "Canne à pêche",
@@ -130,13 +106,10 @@ ITEM_MAP = {
     "bijou":                  "Bijoux",
     "kit nettoyage":          "Kit nettoyage",
     "corde solide":           "Corde solide",
-    "corde":           "Corde solide",
     "hache":                  "Hache en Pierre",
     "hache en pierre":        "Hache en Pierre",
     "carte pirate":           "Carte pirate",
-    "pirate":           "Carte pirate",
     "lecteur carte pirate":   "Lecteur carte pirate",
-    "lecteur pirate":   "Lecteur carte pirate",
 }
 
 # ─── MAPPING ID DISCORD → NOM MEMBRE (sheet cambus) ──────────────────────────
@@ -286,6 +259,7 @@ async def traiter_recolte(message: discord.Message):
                 f"✅ **{sheet_name}** | {jour_fr} | **{nom_sheet}** → +{data['recolte']} ajouté | Total du jour : **{result['total']}**",
                 mention_author=True
             )
+            await message.add_reaction("<:LAgence_Noslig_Logo_Blanc:1403880911749255280>")
         else:
             await message.reply(
                 f"⚠️ **{nom_sheet}** introuvable dans l'onglet **{sheet_name}**.\n"
@@ -318,7 +292,7 @@ async def traiter_cambus(message: discord.Message):
 
     try:
         success = append_cambus(date_str, member_name, items)
-        await message.add_reaction("✅" if success else "❌")
+        await message.add_reaction("<:LAgence_Noslig_Logo_Blanc:1403880911749255280>" if success else "❌")
     except Exception as e:
         print(f"[ERREUR CAMBUS SHEETS] {e}")
         await message.add_reaction("❌")
