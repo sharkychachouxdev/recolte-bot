@@ -22,7 +22,7 @@ JOUR_TO_COL = {
     "Samedi":   9,
 }
 
-COL_NOM    = L
+COL_NOM    = 12
 ROW_START  = 4
 SHEET_NAMES = ["Bonelli", "Faustin", "Gitans"]
 
