@@ -13,13 +13,13 @@ SCOPES = [
 ]
 
 JOUR_TO_COL = {
-    "Dimanche": C,
-    "Lundi":    D,
-    "Mardi":    E,
-    "Mercredi": F,
-    "Jeudi":    G,
-    "Vendredi": H,
-    "Samedi":   I,
+    "Dimanche": 3,
+    "Lundi":    4,
+    "Mardi":    5,
+    "Mercredi": 6,
+    "Jeudi":    7,
+    "Vendredi": 8,
+    "Samedi":   9,
 }
 
 COL_NOM    = L
