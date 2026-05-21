@@ -69,9 +69,15 @@ def update_recolte(sheet_name: str, operateur: str, jour: str, recolte: int) -> 
         return {"success": False, "reason": f"Ligne {row_index} est dans les headers"}
 
     col_index = JOUR_TO_COL[jour]
-    ws.update_cell(row_index, col_index, recolte)
 
-    print(f"[OK] {sheet_name} | {operateur} | {jour} → {recolte} (ligne {row_index}, col {col_index})")
+    # Lit la valeur actuelle et additionne
+    cell_value = ws.cell(row_index, col_index).value
+    valeur_actuelle = int(cell_value) if cell_value and str(cell_value).strip().isdigit() else 0
+    nouvelle_valeur = valeur_actuelle + recolte
+    ws.update_cell(row_index, col_index, nouvelle_valeur)
+
+    print(f"[OK] {sheet_name} | {operateur} | {jour} → {valeur_actuelle} + {recolte} = {nouvelle_valeur} (ligne {row_index}, col {col_index})")
+    return {"success": True, "total": nouvelle_valeur}
     return {"success": True}
 
 
