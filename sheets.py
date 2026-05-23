@@ -202,30 +202,39 @@ def new_week() -> dict:
             # 4) Récupérer l'objet worksheet du duplicata
             new_ws = next(ws for ws in spreadsheet.worksheets() if ws.id == new_sheet_id)
 
-            # 5) Lire les valeurs du duplicata pour connaître la taille et le format des dates
+            # 5) Lire les valeurs pour connaître la taille (avant tout effacement)
             all_values = new_ws.get_all_values()
             last_row   = max(len(all_values), ROW_START)
 
-            # 6) Effacer les valeurs manuelles (C–I, lignes données) mais garder les formules
-            if last_row >= ROW_START:
-                formula_grid = new_ws.get(
-                    f"C{ROW_START}:I{last_row}",
-                    value_render_option="FORMULA",
-                )
-                cell_updates = []
-                for r_offset, formula_row in enumerate(formula_grid):
-                    actual_row = ROW_START + r_offset
-                    padded     = (list(formula_row) + [""] * 7)[:7]   # toujours 7 cols C…I
-                    new_row    = [v if str(v).startswith("=") else "" for v in padded]
-                    if padded != new_row:
-                        cell_updates.append({
-                            "range":  f"C{actual_row}:I{actual_row}",
-                            "values": [new_row],
-                        })
-                if cell_updates:
-                    new_ws.batch_update(cell_updates)
+            # 6) Effacer toutes les valeurs C–I des lignes de données
+            new_ws.batch_clear([f"C{ROW_START}:I{last_row}"])
 
-            # 7) Mettre à jour les dates dans les lignes d'en-tête (1 à ROW_START-1)
+            # 7) Restaurer les formules depuis l'archive (copyPaste PASTE_FORMULA)
+            #    → les cellules avec formule reviennent, les valeurs manuelles restent vides
+            spreadsheet.batch_update({
+                "requests": [{
+                    "copyPaste": {
+                        "source": {
+                            "sheetId":        old_sheet_id,
+                            "startRowIndex":  ROW_START - 1,
+                            "endRowIndex":    last_row,
+                            "startColumnIndex": 2,   # col C (0-based)
+                            "endColumnIndex":   9,   # col I inclusive → 9 exclusive
+                        },
+                        "destination": {
+                            "sheetId":        new_sheet_id,
+                            "startRowIndex":  ROW_START - 1,
+                            "endRowIndex":    last_row,
+                            "startColumnIndex": 2,
+                            "endColumnIndex":   9,
+                        },
+                        "pasteType":        "PASTE_FORMULA",
+                        "pasteOrientation": "NORMAL",
+                    }
+                }]
+            })
+
+            # 8) Mettre à jour les dates dans les lignes d'en-tête (1 à ROW_START-1)
             date_updates = []
             for row_idx in range(ROW_START - 1):          # lignes 0-based : 0, 1, 2
                 if row_idx >= len(all_values):
