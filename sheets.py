@@ -158,11 +158,19 @@ def new_week() -> dict:
             all_sheets   = spreadsheet.worksheets()
             old_index    = next(i for i, ws in enumerate(all_sheets) if ws.id == old_sheet_id)
 
-            # 0) Lire les formules de l'ancienne feuille AVANT toute modification
-            #    (copyPaste PASTE_FORMULA recolle aussi les valeurs → on le fait manuellement)
+            # 0) Lire depuis l'ancienne feuille AVANT toute modification
+            #    a) dernière ligne avec un nom (colonne L) → pour savoir jusqu'où effacer
+            col_l = old_ws.col_values(COL_NOM)
+            last_member_row = max(
+                (i + 1 for i, v in enumerate(col_l) if v.strip() and i >= ROW_START - 1),
+                default=35,
+            )
+            last_member_row = max(last_member_row, 35)   # minimum 35
+
+            #    b) formules dans C-I pour les restaurer après effacement
             try:
                 formula_resp = spreadsheet.values_get(
-                    f"'{base_name}'!C{ROW_START}:I200",
+                    f"'{base_name}'!C{ROW_START}:I{last_member_row}",
                     params={"valueRenderOption": "FORMULA"},
                 )
                 formula_grid = formula_resp.get("values", [])
@@ -214,18 +222,22 @@ def new_week() -> dict:
             # 4) Récupérer l'objet worksheet du duplicata
             new_ws = next(ws for ws in spreadsheet.worksheets() if ws.id == new_sheet_id)
 
-            # 5) Lire les valeurs pour les dates des en-têtes + calculer la dernière ligne
+            # 5) Lire les valeurs du duplicata pour les dates des en-têtes
             all_values = new_ws.get_all_values()
-            last_row   = max(len(all_values), 35)   # minimum 35, s'étend si plus d'users
 
-            # 6) Effacer C{ROW_START}:I{last_row} (valeurs ET formules)
-            new_ws.batch_clear([f"C{ROW_START}:I{last_row}"])
+            # 6) Effacer C4:I{last_member_row} en écrivant des cellules vides
+            #    (update direct = plus fiable que batch_clear sur feuille renommée)
+            n_rows = last_member_row - ROW_START + 1
+            new_ws.update(
+                f"C{ROW_START}:I{last_member_row}",
+                [[""] * 7] * n_rows,
+            )
 
             # 7) Restaurer uniquement les vraies formules (cellules commençant par '=')
             formula_updates = []
             for r_i, formula_row in enumerate(formula_grid):
                 actual_row = ROW_START + r_i
-                if actual_row > last_row:
+                if actual_row > last_member_row:
                     break
                 for c_i, val in enumerate(formula_row[:7]):   # max 7 cols C→I
                     if str(val).startswith("="):
