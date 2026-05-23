@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import gspread
 from google.oauth2.service_account import Credentials
@@ -121,13 +122,28 @@ def append_cambus(date: str, member: str, items: list) -> bool:
 
 # ─── NEW WEEK ─────────────────────────────────────────────────────────────────
 
+# Dates de la semaine suivante par colonne (Dimanche = dimanche qui précède le lundi)
+_JOUR_COL_OFFSET = {
+    3: -1,  # Dimanche  (lundi - 1 jour)
+    4:  0,  # Lundi
+    5:  1,  # Mardi
+    6:  2,  # Mercredi
+    7:  3,  # Jeudi
+    8:  4,  # Vendredi
+    9:  5,  # Samedi
+}
+
+
 def new_week() -> dict:
     try:
         spreadsheet = get_spreadsheet()
 
-        today    = datetime.now()
-        lundi    = today - timedelta(days=today.weekday())
-        date_str = lundi.strftime("%d/%m/%Y")
+        today          = datetime.now()
+        lundi_actuel   = today - timedelta(days=today.weekday())
+        lundi_prochain = lundi_actuel + timedelta(days=7)
+
+        date_str_archive = lundi_actuel.strftime("%d/%m/%Y")
+        date_str_new     = lundi_prochain.strftime("%d/%m/%Y")
 
         new_names = []
 
@@ -138,47 +154,108 @@ def new_week() -> dict:
                 print(f"[WARN] Onglet '{base_name}' introuvable, on passe.")
                 continue
 
-            all_values = old_ws.get_all_values()
+            old_sheet_id = old_ws.id
+            all_sheets   = spreadsheet.worksheets()
+            old_index    = next(i for i, ws in enumerate(all_sheets) if ws.id == old_sheet_id)
 
-            archive_title = f"{base_name} – {date_str}"
-            old_ws.update_title(archive_title)
-            spreadsheet.batch_update({"requests": [{
-                "updateSheetProperties": {
-                    "properties": {
-                        "sheetId": old_ws.id,
-                        "hidden": True,
-                    },
-                    "fields": "hidden"
-                }
-            }]})
+            # 1) Dupliquer la feuille avec un nom temporaire (préserve tout le formatage)
+            temp_name = f"__new_{base_name}__"
+            response  = spreadsheet.batch_update({
+                "requests": [{
+                    "duplicateSheet": {
+                        "sourceSheetId":    old_sheet_id,
+                        "insertSheetIndex": old_index + 1,
+                        "newSheetName":     temp_name,
+                    }
+                }]
+            })
+            new_sheet_id = response["replies"][0]["duplicateSheet"]["properties"]["sheetId"]
 
-            nb_rows = max(len(all_values) + 5, 50)
-            new_ws = spreadsheet.add_worksheet(
-                title=base_name,
-                rows=str(nb_rows),
-                cols="14"
-            )
+            # 2) Archiver et masquer l'ancienne feuille (titre + hidden en une requête)
+            archive_title = f"{base_name} – {date_str_archive}"
+            spreadsheet.batch_update({
+                "requests": [{
+                    "updateSheetProperties": {
+                        "properties": {
+                            "sheetId": old_sheet_id,
+                            "title":   archive_title,
+                            "hidden":  True,
+                        },
+                        "fields": "title,hidden",
+                    }
+                }]
+            })
 
-            if len(all_values) >= 2:
-                new_ws.update("A1", all_values[0:2])
+            # 3) Renommer le duplicata en nom officiel
+            spreadsheet.batch_update({
+                "requests": [{
+                    "updateSheetProperties": {
+                        "properties": {
+                            "sheetId": new_sheet_id,
+                            "title":   base_name,
+                        },
+                        "fields": "title",
+                    }
+                }]
+            })
 
-            updates = []
-            for i, row in enumerate(all_values[2:], start=3):
-                if len(row) >= COL_NOM:
-                    nom = row[COL_NOM - 1]
-                    if nom.strip():
-                        updates.append({
-                            "range": f"L{i}",
-                            "values": [[nom]]
+            # 4) Récupérer l'objet worksheet du duplicata
+            new_ws = next(ws for ws in spreadsheet.worksheets() if ws.id == new_sheet_id)
+
+            # 5) Lire les valeurs du duplicata pour connaître la taille et le format des dates
+            all_values = new_ws.get_all_values()
+            last_row   = max(len(all_values), ROW_START)
+
+            # 6) Effacer les valeurs manuelles (C–I, lignes données) mais garder les formules
+            if last_row >= ROW_START:
+                formula_grid = new_ws.get(
+                    f"C{ROW_START}:I{last_row}",
+                    value_render_option="FORMULA",
+                )
+                cell_updates = []
+                for r_offset, formula_row in enumerate(formula_grid):
+                    actual_row = ROW_START + r_offset
+                    padded     = (list(formula_row) + [""] * 7)[:7]   # toujours 7 cols C…I
+                    new_row    = [v if str(v).startswith("=") else "" for v in padded]
+                    if padded != new_row:
+                        cell_updates.append({
+                            "range":  f"C{actual_row}:I{actual_row}",
+                            "values": [new_row],
                         })
+                if cell_updates:
+                    new_ws.batch_update(cell_updates)
 
-            if updates:
-                new_ws.batch_update(updates)
+            # 7) Mettre à jour les dates dans les lignes d'en-tête (1 à ROW_START-1)
+            date_updates = []
+            for row_idx in range(ROW_START - 1):          # lignes 0-based : 0, 1, 2
+                if row_idx >= len(all_values):
+                    break
+                header_row = all_values[row_idx]
+                for col_num, offset in _JOUR_COL_OFFSET.items():
+                    idx       = col_num - 1               # index 0-based dans la ligne
+                    cell_val  = header_row[idx] if idx < len(header_row) else ""
+                    # Ne mettre à jour que les cellules qui contiennent déjà une date
+                    if not re.search(r'\d{1,2}/\d{1,2}', str(cell_val)):
+                        continue
+                    new_date_obj = lundi_prochain + timedelta(days=offset)
+                    # Préserver le format existant (avec ou sans année)
+                    if re.search(r'\d{1,2}/\d{1,2}/\d{2,4}', cell_val):
+                        new_date = new_date_obj.strftime("%d/%m/%Y")
+                    else:
+                        new_date = new_date_obj.strftime("%d/%m")
+                    col_letter = chr(ord('A') + col_num - 1)
+                    date_updates.append({
+                        "range":  f"{col_letter}{row_idx + 1}",
+                        "values": [[new_date]],
+                    })
+
+            if date_updates:
+                new_ws.batch_update(date_updates)
 
             new_names.append(base_name)
-            print(f"[OK] Nouvelle semaine : '{base_name}' créé, '{archive_title}' masqué")
+            print(f"[OK] '{base_name}' créé (sem. {date_str_new}), '{archive_title}' masqué")
 
-        return {"success": True, "new_names": new_names, "date": date_str}
+        return {"success": True, "new_names": new_names, "date": date_str_new}
 
     except Exception as e:
         print(f"[ERREUR new_week] {e}")
