@@ -158,6 +158,18 @@ def new_week() -> dict:
             all_sheets   = spreadsheet.worksheets()
             old_index    = next(i for i, ws in enumerate(all_sheets) if ws.id == old_sheet_id)
 
+            # 0) Lire les formules de l'ancienne feuille AVANT toute modification
+            #    (copyPaste PASTE_FORMULA recolle aussi les valeurs → on le fait manuellement)
+            try:
+                formula_resp = spreadsheet.values_get(
+                    f"'{base_name}'!C{ROW_START}:I200",
+                    params={"valueRenderOption": "FORMULA"},
+                )
+                formula_grid = formula_resp.get("values", [])
+            except Exception as fe:
+                print(f"[WARN] Lecture formules : {fe}")
+                formula_grid = []
+
             # 1) Dupliquer la feuille avec un nom temporaire (préserve tout le formatage)
             temp_name = f"__new_{base_name}__"
             response  = spreadsheet.batch_update({
@@ -204,40 +216,26 @@ def new_week() -> dict:
 
             # 5) Lire les valeurs pour les dates des en-têtes + calculer la dernière ligne
             all_values = new_ws.get_all_values()
+            last_row   = max(len(all_values), 35)   # minimum 35, s'étend si plus d'users
 
-            # Dernière ligne avec un nom en colonne L (dynamique selon le nombre d'users)
-            col_l = new_ws.col_values(COL_NOM)
-            last_row = max(
-                (i + 1 for i, v in enumerate(col_l) if v.strip()),
-                default=ROW_START
-            )
-
-            # 6) Effacer C{ROW_START}:I{last_row} (toutes les lignes de données)
+            # 6) Effacer C{ROW_START}:I{last_row} (valeurs ET formules)
             new_ws.batch_clear([f"C{ROW_START}:I{last_row}"])
 
-            # 7) Restaurer les formules depuis l'archive sur la même plage
-            spreadsheet.batch_update({
-                "requests": [{
-                    "copyPaste": {
-                        "source": {
-                            "sheetId":          old_sheet_id,
-                            "startRowIndex":    ROW_START - 1,  # 0-based
-                            "endRowIndex":      last_row,        # exclusive = dernière ligne incluse
-                            "startColumnIndex": 2,              # col C
-                            "endColumnIndex":   9,              # col I inclusive → 9 exclusive
-                        },
-                        "destination": {
-                            "sheetId":          new_sheet_id,
-                            "startRowIndex":    ROW_START - 1,
-                            "endRowIndex":      last_row,
-                            "startColumnIndex": 2,
-                            "endColumnIndex":   9,
-                        },
-                        "pasteType":        "PASTE_FORMULA",
-                        "pasteOrientation": "NORMAL",
-                    }
-                }]
-            })
+            # 7) Restaurer uniquement les vraies formules (cellules commençant par '=')
+            formula_updates = []
+            for r_i, formula_row in enumerate(formula_grid):
+                actual_row = ROW_START + r_i
+                if actual_row > last_row:
+                    break
+                for c_i, val in enumerate(formula_row[:7]):   # max 7 cols C→I
+                    if str(val).startswith("="):
+                        col_letter = chr(ord("C") + c_i)
+                        formula_updates.append({
+                            "range":  f"{col_letter}{actual_row}",
+                            "values": [[val]],
+                        })
+            if formula_updates:
+                new_ws.batch_update(formula_updates, value_input_option="USER_ENTERED")
 
             # 8) Mettre à jour les dates dans les lignes d'en-tête (1 à ROW_START-1)
             date_updates = []
