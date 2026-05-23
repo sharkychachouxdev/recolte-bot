@@ -202,29 +202,34 @@ def new_week() -> dict:
             # 4) Récupérer l'objet worksheet du duplicata
             new_ws = next(ws for ws in spreadsheet.worksheets() if ws.id == new_sheet_id)
 
-            # 5) Lire les valeurs pour connaître la taille (avant tout effacement)
+            # 5) Lire les valeurs pour les dates des en-têtes + calculer la dernière ligne
             all_values = new_ws.get_all_values()
-            last_row   = max(len(all_values), ROW_START)
 
-            # 6) Effacer toutes les valeurs C–I des lignes de données
+            # Dernière ligne avec un nom en colonne L (dynamique selon le nombre d'users)
+            col_l = new_ws.col_values(COL_NOM)
+            last_row = max(
+                (i + 1 for i, v in enumerate(col_l) if v.strip()),
+                default=ROW_START
+            )
+
+            # 6) Effacer C{ROW_START}:I{last_row} (toutes les lignes de données)
             new_ws.batch_clear([f"C{ROW_START}:I{last_row}"])
 
-            # 7) Restaurer les formules depuis l'archive (copyPaste PASTE_FORMULA)
-            #    → les cellules avec formule reviennent, les valeurs manuelles restent vides
+            # 7) Restaurer les formules depuis l'archive sur la même plage
             spreadsheet.batch_update({
                 "requests": [{
                     "copyPaste": {
                         "source": {
-                            "sheetId":        old_sheet_id,
-                            "startRowIndex":  ROW_START - 1,
-                            "endRowIndex":    last_row,
-                            "startColumnIndex": 2,   # col C (0-based)
-                            "endColumnIndex":   9,   # col I inclusive → 9 exclusive
+                            "sheetId":          old_sheet_id,
+                            "startRowIndex":    ROW_START - 1,  # 0-based
+                            "endRowIndex":      last_row,        # exclusive = dernière ligne incluse
+                            "startColumnIndex": 2,              # col C
+                            "endColumnIndex":   9,              # col I inclusive → 9 exclusive
                         },
                         "destination": {
-                            "sheetId":        new_sheet_id,
-                            "startRowIndex":  ROW_START - 1,
-                            "endRowIndex":    last_row,
+                            "sheetId":          new_sheet_id,
+                            "startRowIndex":    ROW_START - 1,
+                            "endRowIndex":      last_row,
                             "startColumnIndex": 2,
                             "endColumnIndex":   9,
                         },
