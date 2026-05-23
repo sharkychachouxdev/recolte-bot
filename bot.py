@@ -3,6 +3,14 @@ import re
 import os
 from datetime import datetime
 from dotenv import load_dotenv
+try:
+    from zoneinfo import ZoneInfo
+    _PARIS = ZoneInfo("Europe/Paris")
+except ImportError:
+    _PARIS = None
+
+def _now():
+    return datetime.now(_PARIS) if _PARIS else datetime.now()
 from sheets import update_recolte, new_week, append_cambus
 from users import USERS
 
@@ -245,7 +253,7 @@ async def traiter_recolte(message: discord.Message):
         )
         return
 
-    jour_fr = JOURS_FR.get(datetime.now().strftime("%A"))
+    jour_fr = JOURS_FR.get(_now().strftime("%A"))
 
     try:
         result = update_recolte(
@@ -288,7 +296,7 @@ async def traiter_cambus(message: discord.Message):
             pass
         return
 
-    date_str = datetime.now().strftime("%d/%m/%Y")
+    date_str = _now().strftime("%d/%m/%Y")
 
     try:
         success = append_cambus(date_str, member_name, items)
