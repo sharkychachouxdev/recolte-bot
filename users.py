@@ -47,5 +47,6 @@ USERS = {
     "527961302694363147": "Zark",
     "1233721179249053717": "Sienna",
     "339111289924354048": "Masaru",
+    "1206270148177035315": "Sandro",
     # Ajoute autant de lignes que nécessaire...
 }
