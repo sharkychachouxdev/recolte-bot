@@ -49,5 +49,7 @@ USERS = {
     "339111289924354048": "Masaru",
     "1206270148177035315": "Sandro",
     "1086783628043878494": "Lenskay",
+    "1333523540804239443": "Elvira",
+    "912764768031506472": "Malik",
     # Ajoute autant de lignes que nécessaire...
 }
