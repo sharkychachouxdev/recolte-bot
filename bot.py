@@ -153,6 +153,8 @@ ITEM_MAP = {
     "sac tissu":              "Sac en tissus",
     "sac tissus":             "Sac en tissus",
     "carte pirate":           "Carte pirate",
+  "Carte de sécurité fleeca": "Carte Fleeca",
+    "fleeca":                 "Carte Fleeca",
     "lecteur carte pirate":   "Lecteur carte pirate",
 }
 
