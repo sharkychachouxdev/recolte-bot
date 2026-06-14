@@ -136,6 +136,10 @@ ITEM_MAP = {
     "corde":                  "Corde solide",
     "hache":                  "Hache en Pierre",
     "hache en pierre":        "Hache en Pierre",
+    "sac en tissu":           "Sac en tissus",
+    "sac en tissus":          "Sac en tissus",
+    "sac tissu":              "Sac en tissus",
+    "sac tissus":             "Sac en tissus",
     "carte pirate":           "Carte pirate",
     "lecteur carte pirate":   "Lecteur carte pirate",
 }
