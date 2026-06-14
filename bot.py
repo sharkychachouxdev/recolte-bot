@@ -62,9 +62,12 @@ ITEM_MAP = {
     "ham titane":             "Hameçon Titane",
     # Tendeur
     "tendeur de cro":         "Tendeur de crochetage",
+    "tendeurs de cro":         "Tendeur de crochetage",
     "tendeur cro":            "Tendeur de crochetage",
     "tendeur de crochetage":  "Tendeur de crochetage",
+    "tendeurs de crochetage":  "Tendeur de crochetage",
     "tendeur":                "Tendeur de crochetage",
+    "tendeurs":                "Tendeur de crochetage",
     # Kit réparation
     "kit de répa":            "Kit réparation",
     "kit de repa":            "Kit réparation",
