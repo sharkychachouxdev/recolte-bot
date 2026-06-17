@@ -128,6 +128,7 @@ ITEM_MAP = {
     "cocaïne":                "Cocaïne",
     "methamphétamine":        "Méthamphétamine",
     "methamphetamine":        "Méthamphétamine",
+    "Methampethamine":        "Méthamphétamine",
     "méth":                   "Méthamphétamine",
     "heroïne":                "Héroïne",
     "heroine":                "Héroïne",
