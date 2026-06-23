@@ -21,6 +21,7 @@ CHANNEL_TO_SHEET = {
     "champ-bonelli": "Bonelli",
     "champ-faustin": "Faustin",
     "champ-gitans":  "Gitans",
+    "champ-families": "Families",
 }
 
 # ─── CHANNELS CAMBUS / DIGISCANNE ─────────────────────────────────────────────
