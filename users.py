@@ -57,5 +57,8 @@ USERS = {
     "413326333855399937": "Dariano",
     "694267202752217218": "Maverick",
     "553139043265675267": "Mani",
+    "802944895865192448": "Nedim",
+    "791421834544676934": "Francis",
+    "366519411403653120": "Dimitri",
     # Ajoute autant de lignes que nécessaire...
 }
