@@ -64,5 +64,6 @@ USERS = {
     "712063357158555648": "Tina",
     "508554998813163520": "Lorenzo",
     "859462281716301845": "Jamal",
+    "790367134026694657": "Juan",
     # Ajoute autant de lignes que nécessaire...
 }
