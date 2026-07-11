@@ -20,7 +20,7 @@ load_dotenv()
 CHANNEL_TO_SHEET = {
     "champ-bonelli": "Bonelli",
     "champ-faustin": "Faustin",
-    "champ-families": "Families",
+    "champ-vagos": "Vagos",
 }
 
 # ─── CHANNELS CAMBUS / DIGISCANNE ─────────────────────────────────────────────
