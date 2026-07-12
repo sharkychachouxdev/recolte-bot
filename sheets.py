@@ -25,7 +25,7 @@ JOUR_TO_COL = {
 
 COL_NOM    = 12
 ROW_START  = 4
-SHEET_NAMES = ["Bonelli", "Faustin", "Gitans", "Families"]
+SHEET_NAMES = ["Bonelli", "Faustin", "Vagos", "Gitans", "Families"]
 
 # Structure sheet cambus : Date=A, Membre=B, puis Objet1/Qté1/Objet2/Qté2...
 CAMBUS_SPREADSHEET_ID = os.getenv("CAMBUS_SPREADSHEET_ID", "")  # si sheet séparé
