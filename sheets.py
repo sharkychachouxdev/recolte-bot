@@ -66,11 +66,23 @@ def update_recolte(sheet_name: str, operateur: str, jour: str, recolte: int) -> 
 
     operateur_clean = operateur.strip().lower()
     row_index = None
+    nom_trouve = None
 
+    # 1) Correspondance exacte
     for i, nom in enumerate(noms):
         if nom.strip().lower() == operateur_clean:
             row_index = i + 1
+            nom_trouve = nom.strip()
             break
+
+    # 2) Correspondance approximative (ex: "Kayla" tapé au lieu de "Kayla Shimora")
+    if row_index is None:
+        for i, nom in enumerate(noms):
+            nom_clean = nom.strip().lower()
+            if nom_clean and (nom_clean.startswith(operateur_clean) or operateur_clean in nom_clean):
+                row_index = i + 1
+                nom_trouve = nom.strip()
+                break
 
     if row_index is None:
         return {"success": False, "reason": f"Opérateur '{operateur}' non trouvé"}
@@ -87,8 +99,8 @@ def update_recolte(sheet_name: str, operateur: str, jour: str, recolte: int) -> 
     nouvelle_valeur = valeur_actuelle + recolte
     ws.update_cell(row_index, col_index, nouvelle_valeur)
 
-    print(f"[OK] {sheet_name} | {operateur} | {jour} → {valeur_actuelle} + {recolte} = {nouvelle_valeur}")
-    return {"success": True, "total": nouvelle_valeur}
+    print(f"[OK] {sheet_name} | {nom_trouve} | {jour} → {valeur_actuelle} + {recolte} = {nouvelle_valeur}")
+    return {"success": True, "total": nouvelle_valeur, "operateur": nom_trouve}
 
 
 # ─── CAMBUS / DIGISCANNE ──────────────────────────────────────────────────────
