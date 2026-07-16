@@ -414,6 +414,7 @@ async def traiter_cambus(message: discord.Message):
                 "items":  items,
             }
             save_state(STATE)
+            await log_cambus_modification("🧾 Nouvelle saisie (texte)", member_name, items, message.author)
         await message.add_reaction("<:LAgence_Noslig_Logo_Blanc:1403880911749255280>" if row is not None else "❌")
     except Exception as e:
         print(f"[ERREUR CAMBUS SHEETS] {e}")
@@ -426,7 +427,7 @@ def resolve_membre_cambus(user_id: str):
     return MEMBRES_CAMBUS.get(user_id)
 
 
-async def log_cambus_modification(action: str, member_name: str, items: list, user: discord.abc.User, operateur_text: str = ""):
+async def log_cambus_modification(action: str, member_name: str, items: list, user: discord.abc.User | None = None, operateur_text: str = ""):
     """Notifie un channel de log admin qu'une saisie déjà validée a été
     modifiée ou supprimée, pour garder une trace visible de ce qui est
     réellement répercuté sur le sheet. No-op si CHANNEL_CAMBUS_LOG n'est
@@ -438,8 +439,9 @@ async def log_cambus_modification(action: str, member_name: str, items: list, us
         return
     lignes = "\n".join(f"• **{e['qty']}x** {e['item']}" for e in items)
     note = f"\nOpérateur : **{operateur_text}**" if operateur_text else ""
+    qui = f" par {user.mention}" if user is not None else ""
     try:
-        await channel.send(f"{action} par {user.mention} — **{member_name}**\n{lignes}{note}")
+        await channel.send(f"{action}{qui} — **{member_name}**\n{lignes}{note}")
     except discord.HTTPException as e:
         print(f"[ERREUR LOG CAMBUS] {e}")
 
@@ -674,12 +676,16 @@ async def gerer_edition_cambus(message: discord.Message):
                 record["items"] = items
                 save_state(STATE)
                 await message.add_reaction("✏️")
+                await log_cambus_modification("✏️ Saisie modifiée (texte)", record["member"], items, message.author)
         else:
             # Plus aucun objet dans le message modifié → on vide la ligne
             if clear_cambus_row(record["row"]):
+                ancien_items = record["items"]
+                ancien_member = record["member"]
                 del STATE["cambus"][msg_id]
                 save_state(STATE)
                 await message.add_reaction("🗑️")
+                await log_cambus_modification("🗑️ Saisie supprimée (texte vidé)", ancien_member, ancien_items, message.author)
     except Exception as e:
         print(f"[ERREUR CAMBUS EDIT] {e}")
 
@@ -714,6 +720,7 @@ async def gerer_suppression_cambus(message_id: int):
         clear_cambus_row(record["row"])
         save_state(STATE)
         print(f"[CAMBUS DELETE] message {msg_id} → ligne {record['row']} vidée")
+        await log_cambus_modification("🗑️ Saisie supprimée (message effacé)", record["member"], record["items"])
     except Exception as e:
         print(f"[ERREUR CAMBUS DELETE] {e}")
 
