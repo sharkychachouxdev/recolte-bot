@@ -469,6 +469,8 @@ async def valider_saisie_cambus(interaction: discord.Interaction, member_name: s
                 "operateur": operateur_text,
             }
             save_state(STATE)
+
+            await log_cambus_modification("🧾 Nouvelle saisie", member_name, items, interaction.user, operateur_text)
         except discord.HTTPException as e:
             print(f"[ERREUR CAMBUS UI - confirmation publique] {e}")
 
