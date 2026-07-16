@@ -326,6 +326,7 @@ async def on_ready():
     print(f"   Channels champs   : {', '.join(CHANNEL_TO_SHEET.keys())}")
     print(f"   Channel cambus    : {CHANNEL_CAMBUS}")
     print(f"   Channel digiscanne: {CHANNEL_DIGISCANNE}")
+    print(f"   Channel log cambus: {CHANNEL_CAMBUS_LOG or '(non configuré)'}")
     print(f"   Opérateurs champs : {len(USERS)}")
     print(f"   Membres cambus    : {len(MEMBRES_CAMBUS)}")
 
@@ -433,9 +434,11 @@ async def log_cambus_modification(action: str, member_name: str, items: list, us
     réellement répercuté sur le sheet. No-op si CHANNEL_CAMBUS_LOG n'est
     pas configuré."""
     if not CHANNEL_CAMBUS_LOG:
+        print("[LOG CAMBUS] CHANNEL_CAMBUS_LOG non configuré (variable vide ou 0), log ignoré.")
         return
     channel = client.get_channel(CHANNEL_CAMBUS_LOG)
     if channel is None:
+        print(f"[LOG CAMBUS] Channel introuvable pour l'ID {CHANNEL_CAMBUS_LOG} (mauvais ID, ou pas en cache).")
         return
     lignes = "\n".join(f"• **{e['qty']}x** {e['item']}" for e in items)
     note = f"\nOpérateur : **{operateur_text}**" if operateur_text else ""
