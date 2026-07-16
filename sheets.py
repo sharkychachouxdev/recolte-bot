@@ -153,6 +153,50 @@ def clear_cambus_row(row_number: int) -> bool:
         return False
 
 
+# ─── STOCKAGE DU SUIVI EDIT/DELETE (onglet caché) ─────────────────────────────
+#
+# Le suivi des messages (STATE dans bot.py) doit survivre aux redémarrages du
+# bot. Sur un hébergeur à disque non-persistant (Railway/Render gratuits), un
+# fichier local est perdu à chaque redémarrage → on le stocke plutôt dans un
+# onglet caché du Google Sheet, qui lui est toujours là.
+
+STATE_SHEET_NAME = "_BotState"
+
+
+def _get_state_worksheet():
+    spreadsheet = get_spreadsheet()
+    try:
+        return spreadsheet.worksheet(STATE_SHEET_NAME)
+    except gspread.WorksheetNotFound:
+        ws = spreadsheet.add_worksheet(title=STATE_SHEET_NAME, rows=200, cols=3)
+        try:
+            spreadsheet.batch_update({
+                "requests": [{
+                    "updateSheetProperties": {
+                        "properties": {"sheetId": ws.id, "hidden": True},
+                        "fields": "hidden",
+                    }
+                }]
+            })
+        except Exception as e:
+            print(f"[WARN] Impossible de masquer l'onglet {STATE_SHEET_NAME} : {e}")
+        return ws
+
+
+def load_bot_state_rows() -> list:
+    """Retourne les lignes [type, message_id, json_data] de l'onglet de suivi."""
+    ws = _get_state_worksheet()
+    return ws.get_all_values()
+
+
+def save_bot_state_rows(rows: list) -> None:
+    """Remplace le contenu de l'onglet de suivi par `rows`."""
+    ws = _get_state_worksheet()
+    ws.clear()
+    if rows:
+        ws.update("A1", rows)
+
+
 # ─── NEW WEEK ─────────────────────────────────────────────────────────────────
 
 # Dates de la semaine suivante par colonne (Dimanche = dimanche qui précède le lundi)
@@ -167,11 +211,11 @@ _JOUR_COL_OFFSET = {
 }
 
 
-def new_week() -> dict:
+def new_week(today: datetime = None) -> dict:
     try:
         spreadsheet = get_spreadsheet()
 
-        today          = datetime.now()
+        today          = today or datetime.now()
         lundi_actuel   = today - timedelta(days=today.weekday())
         lundi_prochain = lundi_actuel + timedelta(days=7)
 
