@@ -80,7 +80,10 @@ def update_recolte(sheet_name: str, operateur: str, jour: str, recolte: int) -> 
 
     col_index = JOUR_TO_COL[jour]
     cell_value = ws.cell(row_index, col_index).value
-    valeur_actuelle = int(cell_value) if cell_value and str(cell_value).strip().isdigit() else 0
+    try:
+        valeur_actuelle = int(str(cell_value).strip())
+    except (TypeError, ValueError):
+        valeur_actuelle = 0
     nouvelle_valeur = valeur_actuelle + recolte
     ws.update_cell(row_index, col_index, nouvelle_valeur)
 
@@ -90,33 +93,63 @@ def update_recolte(sheet_name: str, operateur: str, jour: str, recolte: int) -> 
 
 # ─── CAMBUS / DIGISCANNE ──────────────────────────────────────────────────────
 
-def append_cambus(date: str, member: str, items: list) -> bool:
+def get_cambus_worksheet():
+    # Utilise CAMBUS_SPREADSHEET_ID si défini, sinon le spreadsheet principal
+    sid = CAMBUS_SPREADSHEET_ID or os.getenv("SPREADSHEET_ID")
+    spreadsheet = get_spreadsheet(sid)
+    return spreadsheet.worksheet("Saisie")  # première feuille
+
+
+def _build_cambus_row(date: str, member: str, items: list) -> list:
+    row = [""] * (COL_CAMBUS_OBJETS_START + MAX_OBJETS * 2)
+    row[COL_CAMBUS_DATE]   = date
+    row[COL_CAMBUS_MEMBRE] = member
+    for i, entry in enumerate(items[:MAX_OBJETS]):
+        row[COL_CAMBUS_OBJETS_START + i * 2]     = entry["item"]
+        row[COL_CAMBUS_OBJETS_START + i * 2 + 1] = entry["qty"]
+    return row
+
+
+def append_cambus(date: str, member: str, items: list):
     """
     Ajoute une ligne dans le sheet cambus.
     items = liste de {"item": str, "qty": int}
+    Retourne le numéro de la ligne créée, ou None en cas d'échec.
     """
     try:
-        # Utilise CAMBUS_SPREADSHEET_ID si défini, sinon le spreadsheet principal
-        sid = CAMBUS_SPREADSHEET_ID or os.getenv("SPREADSHEET_ID")
-        spreadsheet = get_spreadsheet(sid)
-        ws = spreadsheet.worksheet("Saisie") # première feuille
-
+        ws = get_cambus_worksheet()
         next_row = len(ws.col_values(1)) + 1
-
-        row = [""] * (COL_CAMBUS_OBJETS_START + MAX_OBJETS * 2)
-        row[COL_CAMBUS_DATE]   = date
-        row[COL_CAMBUS_MEMBRE] = member
-
-        for i, entry in enumerate(items[:MAX_OBJETS]):
-            row[COL_CAMBUS_OBJETS_START + i * 2]     = entry["item"]
-            row[COL_CAMBUS_OBJETS_START + i * 2 + 1] = entry["qty"]
-
-        ws.update(f"A{next_row}", [row])
+        ws.update(f"A{next_row}", [_build_cambus_row(date, member, items)])
         print(f"[CAMBUS OK] ligne {next_row} — {member} — {len(items)} objets")
-        return True
+        return next_row
 
     except Exception as e:
         print(f"[ERREUR CAMBUS] {e}")
+        return None
+
+
+def update_cambus_row(row_number: int, date: str, member: str, items: list) -> bool:
+    """Réécrit une ligne existante du sheet cambus (message cambus modifié)."""
+    try:
+        ws = get_cambus_worksheet()
+        ws.update(f"A{row_number}", [_build_cambus_row(date, member, items)])
+        print(f"[CAMBUS EDIT] ligne {row_number} — {member} — {len(items)} objets")
+        return True
+    except Exception as e:
+        print(f"[ERREUR CAMBUS EDIT] {e}")
+        return False
+
+
+def clear_cambus_row(row_number: int) -> bool:
+    """Vide une ligne du sheet cambus (message cambus supprimé)."""
+    try:
+        ws = get_cambus_worksheet()
+        empty_row = [""] * (COL_CAMBUS_OBJETS_START + MAX_OBJETS * 2)
+        ws.update(f"A{row_number}", [empty_row])
+        print(f"[CAMBUS DELETE] ligne {row_number} vidée")
+        return True
+    except Exception as e:
+        print(f"[ERREUR CAMBUS DELETE] {e}")
         return False
 
 
