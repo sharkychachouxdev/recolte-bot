@@ -11,10 +11,14 @@ except ImportError:
 
 def _now():
     return datetime.now(_PARIS) if _PARIS else datetime.now()
-from sheets import update_recolte, new_week, append_cambus
+from sheets import update_recolte, new_week, append_cambus, update_cambus_row, clear_cambus_row
 from users import USERS
+from state import load_state, save_state
 
 load_dotenv()
+
+# ─── SUIVI DES SOUMISSIONS (pour répercuter edit/delete sur le sheet) ────────
+STATE = load_state()
 
 # ─── CHANNELS RÉCOLTE CHAMPS ──────────────────────────────────────────────────
 CHANNEL_TO_SHEET = {
@@ -328,6 +332,13 @@ async def traiter_recolte(message: discord.Message):
             recolte=data["recolte"],
         )
         if result["success"]:
+            STATE["recolte"][str(message.id)] = {
+                "sheet_name": sheet_name,
+                "operateur":  nom_sheet,
+                "jour":       jour_fr,
+                "recolte":    data["recolte"],
+            }
+            save_state(STATE)
             await message.reply(
                 f"✅ **{sheet_name}** | {jour_fr} | **{nom_sheet}** → +{data['recolte']} ajouté | Total du jour : **{result['total']}**",
                 mention_author=True
@@ -364,8 +375,16 @@ async def traiter_cambus(message: discord.Message):
     date_str = _now().strftime("%d/%m/%Y")
 
     try:
-        success = append_cambus(date_str, member_name, items)
-        await message.add_reaction("<:LAgence_Noslig_Logo_Blanc:1403880911749255280>" if success else "❌")
+        row = append_cambus(date_str, member_name, items)
+        if row is not None:
+            STATE["cambus"][str(message.id)] = {
+                "row":    row,
+                "member": member_name,
+                "date":   date_str,
+                "items":  items,
+            }
+            save_state(STATE)
+        await message.add_reaction("<:LAgence_Noslig_Logo_Blanc:1403880911749255280>" if row is not None else "❌")
     except Exception as e:
         print(f"[ERREUR CAMBUS SHEETS] {e}")
         await message.add_reaction("❌")
@@ -407,12 +426,154 @@ async def on_message(message: discord.Message):
     await traiter_message(message)
 
 
+# ─── GESTION DES MODIFICATIONS DE MESSAGE ─────────────────────────────────────
+
+async def gerer_edition_recolte(message: discord.Message):
+    """Répercute la modification d'un message de récolte champ sur le sheet."""
+    channel_name = message.channel.name.lower()
+    if channel_name not in CHANNEL_TO_SHEET:
+        return
+
+    msg_id = str(message.id)
+    record = STATE["recolte"].get(msg_id)
+    data = parse_recolte(message.content)
+    nouvelle_recolte = data["recolte"] if data else 0
+
+    if record is None:
+        # Pas encore suivi : si le message est maintenant valide, on le traite
+        # comme une nouvelle soumission (peu importe le nombre d'éditions).
+        if data is not None:
+            await traiter_recolte(message)
+        return
+
+    delta = nouvelle_recolte - record["recolte"]
+    if delta == 0:
+        return
+
+    try:
+        result = update_recolte(
+            sheet_name=record["sheet_name"],
+            operateur=record["operateur"],
+            jour=record["jour"],
+            recolte=delta,
+        )
+        if result["success"]:
+            if nouvelle_recolte <= 0:
+                del STATE["recolte"][msg_id]
+            else:
+                record["recolte"] = nouvelle_recolte
+            save_state(STATE)
+            signe = "+" if delta > 0 else ""
+            await message.reply(
+                f"✏️ **{record['sheet_name']}** | {record['jour']} | **{record['operateur']}** → "
+                f"{signe}{delta} (modification) | Total du jour : **{result['total']}**",
+                mention_author=True
+            )
+    except Exception as e:
+        print(f"[ERREUR SHEETS EDIT] {e}")
+
+
+async def gerer_edition_cambus(message: discord.Message):
+    """Répercute la modification d'un message cambus/digiscanne sur le sheet."""
+    msg_id = str(message.id)
+    record = STATE["cambus"].get(msg_id)
+    items = parse_cambus(message.content)
+
+    if record is None:
+        # Pas encore suivi : si le message est maintenant valide, on le traite
+        # comme une nouvelle soumission.
+        if items:
+            await traiter_cambus(message)
+        return
+
+    try:
+        if items:
+            if update_cambus_row(record["row"], record["date"], record["member"], items):
+                record["items"] = items
+                save_state(STATE)
+                await message.add_reaction("✏️")
+        else:
+            # Plus aucun objet dans le message modifié → on vide la ligne
+            if clear_cambus_row(record["row"]):
+                del STATE["cambus"][msg_id]
+                save_state(STATE)
+                await message.add_reaction("🗑️")
+    except Exception as e:
+        print(f"[ERREUR CAMBUS EDIT] {e}")
+
+
+async def gerer_suppression_recolte(message_id: int):
+    """Retire de la sheet la récolte champ liée à un message supprimé."""
+    msg_id = str(message_id)
+    record = STATE["recolte"].pop(msg_id, None)
+    if record is None:
+        return
+    try:
+        update_recolte(
+            sheet_name=record["sheet_name"],
+            operateur=record["operateur"],
+            jour=record["jour"],
+            recolte=-record["recolte"],
+        )
+        save_state(STATE)
+        print(f"[RECOLTE DELETE] message {msg_id} → -{record['recolte']} retiré "
+              f"({record['sheet_name']} / {record['operateur']} / {record['jour']})")
+    except Exception as e:
+        print(f"[ERREUR SHEETS DELETE] {e}")
+
+
+async def gerer_suppression_cambus(message_id: int):
+    """Vide la ligne cambus liée à un message supprimé."""
+    msg_id = str(message_id)
+    record = STATE["cambus"].pop(msg_id, None)
+    if record is None:
+        return
+    try:
+        clear_cambus_row(record["row"])
+        save_state(STATE)
+        print(f"[CAMBUS DELETE] message {msg_id} → ligne {record['row']} vidée")
+    except Exception as e:
+        print(f"[ERREUR CAMBUS DELETE] {e}")
+
+
 @client.event
-async def on_message_edit(before: discord.Message, after: discord.Message):
-    recolte_avant = re.search(r"r[eé]colte\s*:\s*(\d+)", before.content, re.IGNORECASE)
-    recolte_apres = re.search(r"r[eé]colte\s*:\s*(\d+)", after.content, re.IGNORECASE)
-    if recolte_apres and not recolte_avant:
-        await traiter_message(after)
+async def on_raw_message_edit(payload: discord.RawMessageUpdateEvent):
+    # On ignore les MESSAGE_UPDATE qui ne touchent pas le contenu (embeds, pin, etc.)
+    if "content" not in payload.data:
+        return
+
+    channel = client.get_channel(payload.channel_id)
+    if channel is None:
+        try:
+            channel = await client.fetch_channel(payload.channel_id)
+        except discord.HTTPException:
+            return
+
+    try:
+        message = await channel.fetch_message(payload.message_id)
+    except discord.HTTPException:
+        return
+
+    if message.author.bot:
+        return
+
+    if message.channel.id in (CHANNEL_CAMBUS, CHANNEL_DIGISCANNE):
+        await gerer_edition_cambus(message)
+    else:
+        await gerer_edition_recolte(message)
+
+
+@client.event
+async def on_raw_message_delete(payload: discord.RawMessageDeleteEvent):
+    await gerer_suppression_recolte(payload.message_id)
+    await gerer_suppression_cambus(payload.message_id)
+
+
+@client.event
+async def on_raw_bulk_message_delete(payload: discord.RawBulkMessageDeleteEvent):
+    for message_id in payload.message_ids:
+        await gerer_suppression_recolte(message_id)
+        await gerer_suppression_cambus(message_id)
 
 
 # ─── Lancement ────────────────────────────────────────────────────────────────
