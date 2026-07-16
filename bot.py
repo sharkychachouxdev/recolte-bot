@@ -238,21 +238,19 @@ def parse_recolte(content: str):
         m = re.search(pattern, content, re.IGNORECASE)
         return m.group(1).strip() if m else None
 
-    recolte   = get(r"r[eé]colte\s*:\s*(\d+)")
-    arrivee   = get(r"heure\s+d.arriv[eé]e\s*:\s*(.+)")
-    depart    = get(r"heure\s+de\s+d[eé]part\s*:\s*(.+)")
-    matu      = get(r"matu\s*:\s*(.+)")
-    operateur = get(r"op[eé]rateur\s*:\s*(.+)")
+    recolte = get(r"r[eé]colte\s*:\s*(\d+)")
+    arrivee = get(r"heure\s+d.arriv[eé]e\s*:\s*(.+)")
+    depart  = get(r"heure\s+de\s+d[eé]part\s*:\s*(.+)")
+    matu    = get(r"matu\s*:\s*(.+)")
 
     if not recolte:
         return None
 
     return {
-        "recolte":   int(recolte),
-        "arrivee":   arrivee or "—",
-        "depart":    depart  or "—",
-        "matu":      matu    or "—",
-        "operateur": operateur,  # None si absent/vide
+        "recolte": int(recolte),
+        "arrivee": arrivee or "—",
+        "depart":  depart  or "—",
+        "matu":    matu    or "—",
     }
 
 
@@ -358,19 +356,6 @@ async def on_ready():
     print(f"   Suivi cambus      : {len(STATE['cambus'])} saisie(s) suivie(s)")
 
 
-def resoudre_operateur(data: dict, message: discord.Message):
-    """Détermine à qui la récolte doit être créditée sur le sheet.
-
-    Priorité au champ **Opérateur :** tapé dans le message (plusieurs
-    personnes peuvent partager un même compte/personnage Discord pour saisir
-    la récolte), sinon le pseudo Discord de la personne qui poste (via
-    `users.py`)."""
-    operateur_tape = (data.get("operateur") or "").strip()
-    if operateur_tape:
-        return operateur_tape
-    return USERS.get(str(message.author.id))
-
-
 async def traiter_recolte(message: discord.Message):
     """Traite un message de récolte champ (Bonelli / Faustin / Gitans)."""
     channel_name = message.channel.name.lower()
@@ -382,13 +367,13 @@ async def traiter_recolte(message: discord.Message):
         return
 
     sheet_name = CHANNEL_TO_SHEET[channel_name]
-    nom_sheet  = resoudre_operateur(data, message)
+    user_id    = str(message.author.id)
+    nom_sheet  = USERS.get(user_id)
 
     if nom_sheet is None:
         await message.reply(
-            f"⚠️ Ton pseudo Discord **`{message.author.name}`** n'est pas enregistré et aucun "
-            f"**Opérateur :** n'est précisé dans le message.\n"
-            f"Ajoute une ligne `Opérateur : TonNom`, ou demande à l'admin de t'ajouter dans `users.py`.",
+            f"⚠️ Ton pseudo Discord **`{message.author.name}`** n'est pas enregistré.\n"
+            f"Demande à l'admin de t'ajouter dans `users.py`.",
             mention_author=True
         )
         return
@@ -403,23 +388,22 @@ async def traiter_recolte(message: discord.Message):
             recolte=data["recolte"],
         )
         if result["success"]:
-            nom_credite = result.get("operateur") or nom_sheet
             STATE["recolte"][str(message.id)] = {
                 "sheet_name": sheet_name,
-                "operateur":  nom_credite,
+                "operateur":  nom_sheet,
                 "jour":       jour_fr,
                 "recolte":    data["recolte"],
             }
             save_state(STATE)
             await message.reply(
-                f"✅ **{sheet_name}** | {jour_fr} | **{nom_credite}** → +{data['recolte']} ajouté | Total du jour : **{result['total']}**",
+                f"✅ **{sheet_name}** | {jour_fr} | **{nom_sheet}** → +{data['recolte']} ajouté | Total du jour : **{result['total']}**",
                 mention_author=True
             )
             await message.add_reaction("<:LAgence_Noslig_Logo_Blanc:1403880911749255280>")
         else:
             await message.reply(
                 f"⚠️ **{nom_sheet}** introuvable dans l'onglet **{sheet_name}**.\n"
-                f"Vérifie l'orthographe (champ **Opérateur :** dans le message, ou `users.py`).",
+                f"Vérifie que le nom dans `users.py` correspond exactement à la colonne `Nom/Prénom` du sheet.",
                 mention_author=True
             )
     except Exception as e:
@@ -659,10 +643,10 @@ async def on_message(message: discord.Message):
 async def gerer_edition_recolte(message: discord.Message):
     """Répercute la modification d'un message de récolte champ sur le sheet.
 
-    Gère aussi bien un changement de quantité qu'un changement d'opérateur
-    (le champ **Opérateur :** est rempli ou corrigé après coup — plusieurs
-    personnes peuvent partager un même compte Discord) : dans ce dernier cas,
-    la récolte est retirée de l'ancien nom et recréditée au nouveau."""
+    Seul le nombre après **Récolte :** compte pour le sheet (delta entre
+    l'ancienne et la nouvelle valeur) ; le crédit reste toujours sur
+    l'opérateur d'origine (celui qui a posté le message). Le champ
+    **Opérateur :** est purement informatif et n'a aucun effet ici."""
     channel_name = message.channel.name.lower()
     if channel_name not in CHANNEL_TO_SHEET:
         return
@@ -670,6 +654,7 @@ async def gerer_edition_recolte(message: discord.Message):
     msg_id = str(message.id)
     record = STATE["recolte"].get(msg_id)
     data = parse_recolte(message.content)
+    nouvelle_recolte = data["recolte"] if data else 0
 
     if record is None:
         # Pas encore suivi : si le message est maintenant valide, on le traite
@@ -678,60 +663,29 @@ async def gerer_edition_recolte(message: discord.Message):
             await traiter_recolte(message)
         return
 
-    sheet_name = record["sheet_name"]  # le channel ne change pas sur un edit
-    jour       = record["jour"]        # on garde le jour de la soumission d'origine
-    ancien_nom = record["operateur"]
-    ancien_qty = record["recolte"]
-
-    nouveau_nom  = resoudre_operateur(data, message) if data else None
-    nouvelle_qty = data["recolte"] if data else 0
+    delta = nouvelle_recolte - record["recolte"]
+    if delta == 0:
+        return
 
     try:
-        # Plus rien de valide dans le message → on retire entièrement l'ancienne récolte
-        if nouveau_nom is None or nouvelle_qty <= 0:
-            update_recolte(sheet_name=sheet_name, operateur=ancien_nom, jour=jour, recolte=-ancien_qty)
-            del STATE["recolte"][msg_id]
+        result = update_recolte(
+            sheet_name=record["sheet_name"],
+            operateur=record["operateur"],
+            jour=record["jour"],
+            recolte=delta,
+        )
+        if result["success"]:
+            if nouvelle_recolte <= 0:
+                del STATE["recolte"][msg_id]
+            else:
+                record["recolte"] = nouvelle_recolte
             save_state(STATE)
-            return
-
-        if nouveau_nom == ancien_nom:
-            # Même opérateur : simple ajustement de la quantité sur la même ligne
-            delta = nouvelle_qty - ancien_qty
-            if delta == 0:
-                return
-            result = update_recolte(sheet_name=sheet_name, operateur=ancien_nom, jour=jour, recolte=delta)
-            if result["success"]:
-                record["recolte"] = nouvelle_qty
-                save_state(STATE)
-                signe = "+" if delta > 0 else ""
-                await message.reply(
-                    f"✏️ **{sheet_name}** | {jour} | **{ancien_nom}** → "
-                    f"{signe}{delta} (modification) | Total du jour : **{result['total']}**",
-                    mention_author=True
-                )
-            return
-
-        # L'opérateur a changé : on crédite le nouveau, puis on retire l'ancien.
-        # (dans cet ordre, pour ne rien retirer si le nouveau nom est introuvable)
-        result = update_recolte(sheet_name=sheet_name, operateur=nouveau_nom, jour=jour, recolte=nouvelle_qty)
-        if not result["success"]:
+            signe = "+" if delta > 0 else ""
             await message.reply(
-                f"⚠️ **{nouveau_nom}** introuvable dans l'onglet **{sheet_name}**, "
-                f"la récolte reste attribuée à **{ancien_nom}**.",
+                f"✏️ **{record['sheet_name']}** | {record['jour']} | **{record['operateur']}** → "
+                f"{signe}{delta} (modification) | Total du jour : **{result['total']}**",
                 mention_author=True
             )
-            return
-
-        update_recolte(sheet_name=sheet_name, operateur=ancien_nom, jour=jour, recolte=-ancien_qty)
-        nom_credite = result.get("operateur") or nouveau_nom
-        record["operateur"] = nom_credite
-        record["recolte"] = nouvelle_qty
-        save_state(STATE)
-        await message.reply(
-            f"✏️ **{sheet_name}** | {jour} | Récolte transférée de **{ancien_nom}** vers **{nom_credite}** "
-            f"({nouvelle_qty}) | Total du jour de {nom_credite} : **{result['total']}**",
-            mention_author=True
-        )
     except Exception as e:
         print(f"[ERREUR SHEETS EDIT] {e}")
 
