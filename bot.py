@@ -1,7 +1,8 @@
 import discord
 import re
 import os
-from datetime import datetime
+from datetime import datetime, time as dtime
+from discord.ext import tasks
 from dotenv import load_dotenv
 try:
     from zoneinfo import ZoneInfo
@@ -301,6 +302,25 @@ SAISIE_CAMBUS_VIEW = None
 SAISIE_RECORD_VIEW = None
 
 
+# ─── NOUVELLE SEMAINE AUTOMATIQUE (dimanche minuit, heure de Paris) ───────────
+
+@tasks.loop(time=dtime(hour=0, minute=0, tzinfo=_PARIS) if _PARIS else dtime(hour=0, minute=0))
+async def newweek_hebdomadaire():
+    if _now().weekday() != 6:  # 0=lundi ... 6=dimanche
+        return
+    print("[NEWWEEK AUTO] Déclenchement automatique (dimanche minuit)")
+    result = new_week(_now())
+    if result["success"]:
+        print(f"[NEWWEEK AUTO] OK — semaine du {result['date']} — onglets : {', '.join(result['new_names'])}")
+    else:
+        print(f"[NEWWEEK AUTO] ERREUR : {result['reason']}")
+
+
+@newweek_hebdomadaire.before_loop
+async def before_newweek_hebdomadaire():
+    await client.wait_until_ready()
+
+
 @client.event
 async def on_ready():
     global SAISIE_CAMBUS_VIEW, SAISIE_RECORD_VIEW
@@ -322,6 +342,9 @@ async def on_ready():
         )
         client.add_view(SAISIE_RECORD_VIEW)
 
+    if not newweek_hebdomadaire.is_running():
+        newweek_hebdomadaire.start()
+
     print(f"✅  Bot connecté : {client.user}")
     print(f"   Channels champs   : {', '.join(CHANNEL_TO_SHEET.keys())}")
     print(f"   Channel cambus    : {CHANNEL_CAMBUS}")
@@ -329,6 +352,8 @@ async def on_ready():
     print(f"   Channel log cambus: {CHANNEL_CAMBUS_LOG or '(non configuré)'}")
     print(f"   Opérateurs champs : {len(USERS)}")
     print(f"   Membres cambus    : {len(MEMBRES_CAMBUS)}")
+    print(f"   Suivi récolte     : {len(STATE['recolte'])} message(s) suivi(s)")
+    print(f"   Suivi cambus      : {len(STATE['cambus'])} saisie(s) suivie(s)")
 
 
 async def traiter_recolte(message: discord.Message):
@@ -570,7 +595,7 @@ async def traiter_message(message: discord.Message):
             await message.reply("❌ Tu n'as pas la permission d'utiliser cette commande.")
             return
         await message.reply("⏳ Création de la nouvelle semaine en cours...")
-        result = new_week()
+        result = new_week(_now())
         if result["success"]:
             onglets = ", ".join(f"**{n}**" for n in result["new_names"])
             await message.reply(
