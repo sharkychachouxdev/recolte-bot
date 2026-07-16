@@ -1,9 +1,12 @@
 # ─── MENU INTERACTIF DE SAISIE CAMBUS ─────────────────────────────────────────
 #
 # Bouton permanent → panier (choix d'un objet + quantité, répété) → validation.
-# Ce module est purement UI : l'écriture réelle dans le Google Sheet est
-# déléguée à la fonction `on_valider` fournie par bot.py (injection de
-# dépendance), pour éviter les imports circulaires.
+# Après validation, un message public reste modifiable/supprimable via
+# SaisieRecordView (persistant lui aussi).
+#
+# Ce module est purement UI : l'écriture réelle dans le Google Sheet et le
+# suivi (STATE, logs admin) sont délégués à des fonctions fournies par bot.py
+# (injection de dépendance), pour éviter les imports circulaires.
 
 import discord
 
@@ -55,10 +58,14 @@ def _chunk(lst: list, size: int) -> list:
 ITEM_CHUNKS = _chunk(ITEMS_CAMBUS, 25)  # 25 = max options par menu déroulant Discord
 
 
-def _build_cart_embed(cart: list, member_name: str) -> discord.Embed:
-    embed = discord.Embed(title="🧾 Saisie cambus", color=discord.Color.blurple())
+def _build_cart_embed(cart: list, member_name: str, titre: str = "🧾 Saisie cambus") -> discord.Embed:
+    embed = discord.Embed(title=titre, color=discord.Color.blurple())
     if not cart:
-        embed.description = "Panier vide. Choisis un objet dans le menu ci-dessous."
+        embed.description = (
+            "Panier vide. Choisis un objet dans l'un des menus ci-dessous "
+            "(chaque menu contient une partie différente de la liste, tu peux "
+            "utiliser n'importe lequel des deux)."
+        )
     else:
         embed.description = "\n".join(f"• **{e['qty']}x** {e['item']}" for e in cart)
     embed.set_footer(text=f"{len(cart)}/{MAX_ITEMS_PAR_SAISIE} objets — {member_name}")
@@ -66,18 +73,29 @@ def _build_cart_embed(cart: list, member_name: str) -> discord.Embed:
 
 
 class QuantiteModal(discord.ui.Modal):
-    quantite = discord.ui.TextInput(
-        label="Quantité",
-        placeholder="Ex : 4",
-        default="1",
-        max_length=4,
-        required=True,
-    )
+    """Modal de saisie de quantité. Si l'objet est déjà dans le panier, le
+    modal prévient clairement que la quantité existante sera remplacée."""
 
-    def __init__(self, item_name: str, cart_view: "CartView"):
-        super().__init__(title=item_name[:45])
+    def __init__(self, item_name: str, cart_view: "CartView", quantite_actuelle: int | None = None):
         self.item_name = item_name
         self.cart_view = cart_view
+        self.remplace = quantite_actuelle is not None
+
+        title = f"⚠️ Modifier : {item_name}"[:45] if self.remplace else item_name[:45]
+        super().__init__(title=title)
+
+        label = (
+            "⚠️ Déjà dans le panier, remplace l'ancienne quantité"
+            if self.remplace else "Quantité"
+        )
+        self.quantite = discord.ui.TextInput(
+            label=label[:45],
+            placeholder="Ex : 4",
+            default=str(quantite_actuelle) if self.remplace else "1",
+            max_length=4,
+            required=True,
+        )
+        self.add_item(self.quantite)
 
     async def on_submit(self, interaction: discord.Interaction):
         raw = self.quantite.value.strip()
@@ -87,7 +105,11 @@ class QuantiteModal(discord.ui.Modal):
             )
             return
 
-        self.cart_view.ajouter(self.item_name, int(raw))
+        if self.remplace:
+            self.cart_view.definir_quantite(self.item_name, int(raw))
+        else:
+            self.cart_view.ajouter(self.item_name, int(raw))
+
         self.cart_view.refresh_state()
         await interaction.response.edit_message(
             embed=self.cart_view.build_embed(), view=self.cart_view
@@ -136,10 +158,14 @@ class OperateurModal(discord.ui.Modal, title="Valider la saisie"):
 
 class ItemSelect(discord.ui.Select):
     def __init__(self, chunk_index: int, options: list, cart_view: "CartView"):
-        placeholder = (
-            f"Choisir un objet ({chunk_index}/{len(ITEM_CHUNKS)})"
-            if len(ITEM_CHUNKS) > 1 else "Choisir un objet"
-        )
+        # Le placeholder indique la plage alphabétique du menu plutôt qu'un
+        # simple numéro (1/2), pour que ce soit clair qu'on peut piocher dans
+        # n'importe quel menu et que chacun couvre une partie différente de
+        # la liste (et non une limite de "5 objets par ligne").
+        if len(ITEM_CHUNKS) > 1:
+            placeholder = f"Objets : {options[0]} → {options[-1]}"[:150]
+        else:
+            placeholder = "Choisir un objet"
         super().__init__(
             placeholder=placeholder,
             options=[discord.SelectOption(label=item) for item in options],
@@ -151,24 +177,70 @@ class ItemSelect(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
         item_name = self.values[0]
-        deja_dans_panier = any(e["item"] == item_name for e in self.cart_view.cart)
-        if not deja_dans_panier and len(self.cart_view.cart) >= MAX_ITEMS_PAR_SAISIE:
-            await interaction.response.send_message(
-                f"⚠️ Maximum {MAX_ITEMS_PAR_SAISIE} objets différents par saisie (limite du sheet).\n"
-                f"Tu peux encore augmenter la quantité d'un objet déjà dans le panier, "
-                f"sinon valide cette saisie puis relance **Faire ma saisie cambus** pour le reste.",
-                ephemeral=True,
+        existant = next((e for e in self.cart_view.cart if e["item"] == item_name), None)
+
+        if existant is None:
+            if len(self.cart_view.cart) >= MAX_ITEMS_PAR_SAISIE:
+                await interaction.response.send_message(
+                    f"⚠️ Maximum {MAX_ITEMS_PAR_SAISIE} objets différents par saisie (limite du sheet).\n"
+                    f"Tu peux encore augmenter la quantité d'un objet déjà dans le panier, "
+                    f"sinon valide cette saisie puis relance **Faire ma saisie cambus** pour le reste.",
+                    ephemeral=True,
+                )
+                return
+            await interaction.response.send_modal(QuantiteModal(item_name, self.cart_view))
+        else:
+            # Objet déjà présent : le modal préviendra clairement qu'il va
+            # remplacer la quantité existante (voir QuantiteModal).
+            await interaction.response.send_modal(
+                QuantiteModal(item_name, self.cart_view, quantite_actuelle=existant["qty"])
             )
+
+
+class RemoveItemSelect(discord.ui.Select):
+    """Menu dynamique permettant de retirer un objet précis du panier
+    (recalculé à chaque changement via refresh())."""
+
+    def __init__(self, cart_view: "CartView", row: int):
+        self.cart_view = cart_view
+        super().__init__(
+            placeholder="Retirer un objet du panier",
+            options=self._build_options(),
+            min_values=1,
+            max_values=1,
+            row=row,
+            disabled=len(cart_view.cart) == 0,
+        )
+
+    def _build_options(self) -> list:
+        if not self.cart_view.cart:
+            return [discord.SelectOption(label="Panier vide pour l'instant", value="__empty__")]
+        return [
+            discord.SelectOption(label=f"{e['item']} (x{e['qty']})", value=e["item"])
+            for e in self.cart_view.cart
+        ]
+
+    def refresh(self):
+        self.options = self._build_options()
+        self.disabled = len(self.cart_view.cart) == 0
+
+    async def callback(self, interaction: discord.Interaction):
+        item_name = self.values[0]
+        if item_name == "__empty__":
+            await interaction.response.defer()
             return
-        await interaction.response.send_modal(QuantiteModal(item_name, self.cart_view))
+        self.cart_view.retirer(item_name)
+        self.cart_view.refresh_state()
+        await interaction.response.edit_message(embed=self.cart_view.build_embed(), view=self.cart_view)
 
 
 class CartView(discord.ui.View):
-    def __init__(self, member_name: str, on_valider):
+    def __init__(self, member_name: str, on_valider, initial_items: list | None = None, titre: str = "🧾 Saisie cambus"):
         super().__init__(timeout=900)  # 15 min d'inactivité
         self.member_name = member_name
         self.on_valider = on_valider
-        self.cart: list = []  # [{"item": str, "qty": int}]
+        self.titre = titre
+        self.cart: list = [dict(e) for e in initial_items] if initial_items else []  # [{"item": str, "qty": int}]
 
         # Les boutons décorés (@discord.ui.button) sont ajoutés automatiquement
         # par super().__init__() ci-dessus, sans row explicite : ils se
@@ -188,6 +260,9 @@ class CartView(discord.ui.View):
             btn.row = boutons_row
             self.add_item(btn)
 
+        self.remove_select = RemoveItemSelect(self, row=boutons_row + 1)
+        self.add_item(self.remove_select)
+
         self.refresh_state()
 
     def ajouter(self, item: str, qty: int):
@@ -197,11 +272,23 @@ class CartView(discord.ui.View):
                 return
         self.cart.append({"item": item, "qty": qty})
 
+    def definir_quantite(self, item: str, qty: int):
+        """Remplace la quantité d'un objet déjà présent (au lieu de l'additionner)."""
+        for entry in self.cart:
+            if entry["item"] == item:
+                entry["qty"] = qty
+                return
+        self.cart.append({"item": item, "qty": qty})
+
+    def retirer(self, item: str):
+        self.cart = [e for e in self.cart if e["item"] != item]
+
     def refresh_state(self):
         self.valider_button.disabled = len(self.cart) == 0
+        self.remove_select.refresh()
 
     def build_embed(self) -> discord.Embed:
-        return _build_cart_embed(self.cart, self.member_name)
+        return _build_cart_embed(self.cart, self.member_name, self.titre)
 
     @discord.ui.button(label="Valider l'envoi", style=discord.ButtonStyle.success, emoji="✅", disabled=True)
     async def valider_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -251,3 +338,47 @@ class SaisieCambusButtonView(discord.ui.View):
         await interaction.response.send_message(
             embed=cart_view.build_embed(), view=cart_view, ephemeral=True
         )
+
+
+class SaisieRecordView(discord.ui.View):
+    """Vue persistante attachée au message public de confirmation d'une saisie
+    déjà validée. Permet de la modifier (rouvre un panier pré-rempli) ou de la
+    supprimer (vide la ligne du sheet), en gardant une trace pour l'admin."""
+
+    def __init__(self, get_record, on_modifier, on_supprimer):
+        super().__init__(timeout=None)
+        self.get_record = get_record      # callable(message_id: str) -> dict | None
+        self.on_modifier = on_modifier    # async callable(interaction, record) -> None
+        self.on_supprimer = on_supprimer  # async callable(interaction, record) -> None
+
+    @discord.ui.button(
+        label="Modifier",
+        emoji="✏️",
+        style=discord.ButtonStyle.primary,
+        custom_id="cambus:record:modifier",
+    )
+    async def modifier_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        record = self.get_record(str(interaction.message.id))
+        if record is None:
+            await interaction.response.send_message(
+                "⚠️ Cette saisie n'est plus modifiable (déjà supprimée ou introuvable).",
+                ephemeral=True,
+            )
+            return
+        await self.on_modifier(interaction, record)
+
+    @discord.ui.button(
+        label="Supprimer",
+        emoji="🗑️",
+        style=discord.ButtonStyle.danger,
+        custom_id="cambus:record:supprimer",
+    )
+    async def supprimer_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        record = self.get_record(str(interaction.message.id))
+        if record is None:
+            await interaction.response.send_message(
+                "⚠️ Cette saisie n'est plus modifiable (déjà supprimée ou introuvable).",
+                ephemeral=True,
+            )
+            return
+        await self.on_supprimer(interaction, record)
