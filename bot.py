@@ -14,7 +14,7 @@ def _now():
 from sheets import update_recolte, new_week, append_cambus, update_cambus_row, clear_cambus_row
 from users import USERS
 from state import load_state, save_state
-from cambus_menu import SaisieCambusButtonView
+from cambus_menu import SaisieCambusButtonView, SaisieRecordView, CartView
 
 load_dotenv()
 
@@ -32,6 +32,9 @@ CHANNEL_TO_SHEET = {
 CHANNEL_CAMBUS      = int(os.getenv("CHANNEL_CAMBUS",      "0"))
 CHANNEL_DIGISCANNE  = int(os.getenv("CHANNEL_DIGISCANNE",  "0"))
 CHANNEL_CAMBUS_MENU = int(os.getenv("CHANNEL_CAMBUS_MENU", "1330679538736173106"))
+# Channel où sont notifiées les modifications/suppressions de saisies déjà
+# validées (traçabilité admin). Laisser à 0 pour désactiver ces notifs.
+CHANNEL_CAMBUS_LOG  = int(os.getenv("CHANNEL_CAMBUS_LOG",  "0"))
 
 JOURS_FR = {
     "Monday":    "Lundi",
@@ -291,17 +294,18 @@ intents = discord.Intents.default()
 intents.message_content = True
 client = discord.Client(intents=intents)
 
-# Vue persistante : initialisée à None, sera créée dans on_ready()
-# une fois que la boucle asyncio tourne (discord.ui.View en a besoin
-# pour appeler asyncio.get_running_loop()).
+# Vues persistantes : initialisées à None, créées dans on_ready() une fois
+# que la boucle asyncio tourne (discord.ui.View en a besoin pour appeler
+# asyncio.get_running_loop()).
 SAISIE_CAMBUS_VIEW = None
+SAISIE_RECORD_VIEW = None
 
 
 @client.event
 async def on_ready():
-    global SAISIE_CAMBUS_VIEW
+    global SAISIE_CAMBUS_VIEW, SAISIE_RECORD_VIEW
 
-    # Création + enregistrement de la vue persistante, seulement maintenant
+    # Création + enregistrement des vues persistantes, seulement maintenant
     # que le bot est prêt et que la boucle asyncio tourne.
     if SAISIE_CAMBUS_VIEW is None:
         SAISIE_CAMBUS_VIEW = SaisieCambusButtonView(
@@ -309,6 +313,14 @@ async def on_ready():
             on_valider=valider_saisie_cambus,
         )
         client.add_view(SAISIE_CAMBUS_VIEW)
+
+    if SAISIE_RECORD_VIEW is None:
+        SAISIE_RECORD_VIEW = SaisieRecordView(
+            get_record=lambda message_id: STATE["cambus"].get(message_id),
+            on_modifier=record_modifier_saisie,
+            on_supprimer=record_supprimer_saisie,
+        )
+        client.add_view(SAISIE_RECORD_VIEW)
 
     print(f"✅  Bot connecté : {client.user}")
     print(f"   Channels champs   : {', '.join(CHANNEL_TO_SHEET.keys())}")
@@ -414,8 +426,28 @@ def resolve_membre_cambus(user_id: str):
     return MEMBRES_CAMBUS.get(user_id)
 
 
+async def log_cambus_modification(action: str, member_name: str, items: list, user: discord.abc.User, operateur_text: str = ""):
+    """Notifie un channel de log admin qu'une saisie déjà validée a été
+    modifiée ou supprimée, pour garder une trace visible de ce qui est
+    réellement répercuté sur le sheet. No-op si CHANNEL_CAMBUS_LOG n'est
+    pas configuré."""
+    if not CHANNEL_CAMBUS_LOG:
+        return
+    channel = client.get_channel(CHANNEL_CAMBUS_LOG)
+    if channel is None:
+        return
+    lignes = "\n".join(f"• **{e['qty']}x** {e['item']}" for e in items)
+    note = f"\nOpérateur : **{operateur_text}**" if operateur_text else ""
+    try:
+        await channel.send(f"{action} par {user.mention} — **{member_name}**\n{lignes}{note}")
+    except discord.HTTPException as e:
+        print(f"[ERREUR LOG CAMBUS] {e}")
+
+
 async def valider_saisie_cambus(interaction: discord.Interaction, member_name: str, items: list, operateur_text: str) -> bool:
-    """Écrit la saisie du panier sur le sheet et poste une confirmation publique dans le channel."""
+    """Écrit la saisie du panier sur le sheet et poste une confirmation
+    publique dans le channel, avec des boutons Modifier/Supprimer persistants
+    (SaisieRecordView) pour pouvoir corriger une erreur ensuite."""
     date_str = _now().strftime("%d/%m/%Y")
     try:
         row = append_cambus(date_str, member_name, items)
@@ -425,9 +457,18 @@ async def valider_saisie_cambus(interaction: discord.Interaction, member_name: s
         lignes = "\n".join(f"• **{e['qty']}x** {e['item']}" for e in items)
         note = f"\nOpérateur : **{operateur_text}**" if operateur_text else ""
         try:
-            await interaction.channel.send(
-                f"🧾 Nouvelle saisie cambus — **{member_name}**\n{lignes}{note}"
+            sent = await interaction.channel.send(
+                f"🧾 Nouvelle saisie cambus — **{member_name}**\n{lignes}{note}",
+                view=SAISIE_RECORD_VIEW,
             )
+            STATE["cambus"][str(sent.id)] = {
+                "row":       row,
+                "member":    member_name,
+                "date":      date_str,
+                "items":     items,
+                "operateur": operateur_text,
+            }
+            save_state(STATE)
         except discord.HTTPException as e:
             print(f"[ERREUR CAMBUS UI - confirmation publique] {e}")
 
@@ -435,6 +476,81 @@ async def valider_saisie_cambus(interaction: discord.Interaction, member_name: s
     except Exception as e:
         print(f"[ERREUR CAMBUS UI] {e}")
         return False
+
+
+async def record_modifier_saisie(interaction: discord.Interaction, record: dict):
+    """Rouvre un panier pré-rempli avec le contenu d'une saisie déjà validée,
+    pour permettre de la corriger. La validation met à jour la ligne du
+    sheet existante (au lieu d'en créer une nouvelle) et répercute le
+    changement sur le message public d'origine."""
+    original_message = interaction.message  # le message public Modifier/Supprimer
+
+    async def on_valider_modif(inter2: discord.Interaction, member_name2: str, items2: list, operateur_text2: str) -> bool:
+        try:
+            ok = update_cambus_row(record["row"], record["date"], member_name2, items2)
+            if not ok:
+                return False
+
+            record["items"] = items2
+            record["member"] = member_name2
+            record["operateur"] = operateur_text2
+            save_state(STATE)
+
+            lignes = "\n".join(f"• **{e['qty']}x** {e['item']}" for e in items2)
+            note = f"\nOpérateur : **{operateur_text2}**" if operateur_text2 else ""
+            try:
+                await original_message.edit(
+                    content=f"🧾 Saisie cambus (modifiée) — **{member_name2}**\n{lignes}{note}",
+                    view=SAISIE_RECORD_VIEW,
+                )
+            except discord.HTTPException as e:
+                print(f"[ERREUR MAJ MESSAGE ORIGINAL] {e}")
+
+            await log_cambus_modification("✏️ Saisie modifiée", member_name2, items2, inter2.user, operateur_text2)
+            return True
+        except Exception as e:
+            print(f"[ERREUR CAMBUS MODIF] {e}")
+            return False
+
+    cart_view = CartView(
+        member_name=record["member"],
+        on_valider=on_valider_modif,
+        initial_items=record["items"],
+        titre="✏️ Modifier ma saisie",
+    )
+    await interaction.response.send_message(
+        embed=cart_view.build_embed(), view=cart_view, ephemeral=True
+    )
+
+
+async def record_supprimer_saisie(interaction: discord.Interaction, record: dict):
+    """Vide la ligne du sheet correspondant à une saisie déjà validée et
+    marque le message public comme supprimé."""
+    try:
+        ok = clear_cambus_row(record["row"])
+        if not ok:
+            await interaction.response.send_message(
+                "❌ Erreur lors de la suppression sur le sheet, réessaie.", ephemeral=True
+            )
+            return
+
+        STATE["cambus"].pop(str(interaction.message.id), None)
+        save_state(STATE)
+
+        await interaction.response.edit_message(
+            content=f"🗑️ Saisie cambus supprimée — **{record['member']}**",
+            view=None,
+        )
+
+        await log_cambus_modification(
+            "🗑️ Saisie supprimée", record["member"], record["items"], interaction.user, record.get("operateur", "")
+        )
+    except Exception as e:
+        print(f"[ERREUR CAMBUS SUPPRESSION] {e}")
+        try:
+            await interaction.response.send_message("❌ Erreur lors de la suppression.", ephemeral=True)
+        except discord.InteractionResponded:
+            pass
 
 
 async def traiter_message(message: discord.Message):
