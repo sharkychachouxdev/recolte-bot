@@ -14,6 +14,7 @@ def _now():
 from sheets import update_recolte, new_week, append_cambus, update_cambus_row, clear_cambus_row
 from users import USERS
 from state import load_state, save_state
+from cambus_menu import SaisieCambusButtonView
 
 load_dotenv()
 
@@ -28,8 +29,9 @@ CHANNEL_TO_SHEET = {
 }
 
 # ─── CHANNELS CAMBUS / DIGISCANNE ─────────────────────────────────────────────
-CHANNEL_CAMBUS     = int(os.getenv("CHANNEL_CAMBUS",     "0"))
-CHANNEL_DIGISCANNE = int(os.getenv("CHANNEL_DIGISCANNE", "0"))
+CHANNEL_CAMBUS      = int(os.getenv("CHANNEL_CAMBUS",      "0"))
+CHANNEL_DIGISCANNE  = int(os.getenv("CHANNEL_DIGISCANNE",  "0"))
+CHANNEL_CAMBUS_MENU = int(os.getenv("CHANNEL_CAMBUS_MENU", "1330679538736173106"))
 
 JOURS_FR = {
     "Monday":    "Lundi",
@@ -390,6 +392,43 @@ async def traiter_cambus(message: discord.Message):
         await message.add_reaction("❌")
 
 
+# ─── MENU INTERACTIF CAMBUS (bouton → panier) ─────────────────────────────────
+
+def resolve_membre_cambus(user_id: str):
+    return MEMBRES_CAMBUS.get(user_id)
+
+
+async def valider_saisie_cambus(interaction: discord.Interaction, member_name: str, items: list, operateur_text: str) -> bool:
+    """Écrit la saisie du panier sur le sheet et poste une confirmation publique dans le channel."""
+    date_str = _now().strftime("%d/%m/%Y")
+    try:
+        row = append_cambus(date_str, member_name, items)
+        if row is None:
+            return False
+
+        lignes = "\n".join(f"• **{e['qty']}x** {e['item']}" for e in items)
+        note = f"\nOpérateur : **{operateur_text}**" if operateur_text else ""
+        try:
+            await interaction.channel.send(
+                f"🧾 Nouvelle saisie cambus — **{member_name}**\n{lignes}{note}"
+            )
+        except discord.HTTPException as e:
+            print(f"[ERREUR CAMBUS UI - confirmation publique] {e}")
+
+        return True
+    except Exception as e:
+        print(f"[ERREUR CAMBUS UI] {e}")
+        return False
+
+
+# Vue persistante : doit être enregistrée pour que le bouton fonctionne après un redémarrage.
+SAISIE_CAMBUS_VIEW = SaisieCambusButtonView(
+    resolve_member=resolve_membre_cambus,
+    on_valider=valider_saisie_cambus,
+)
+client.add_view(SAISIE_CAMBUS_VIEW)
+
+
 async def traiter_message(message: discord.Message):
     if message.author.bot:
         return
@@ -410,6 +449,23 @@ async def traiter_message(message: discord.Message):
             )
         else:
             await message.reply(f"❌ Erreur : {result['reason']}")
+        return
+
+    # Commande !setup_cambus : poste le bouton persistant de saisie cambus
+    if message.content.strip().lower() == "!setup_cambus":
+        if message.author.id not in ADMIN_IDS:
+            await message.reply("❌ Tu n'as pas la permission d'utiliser cette commande.")
+            return
+        channel = client.get_channel(CHANNEL_CAMBUS_MENU)
+        if channel is None:
+            await message.reply(f"❌ Channel introuvable : {CHANNEL_CAMBUS_MENU}")
+            return
+        await channel.send(
+            "🧾 **Saisie cambus**\nClique sur le bouton ci-dessous pour déclarer ta récolte "
+            "(jusqu'à 10 objets différents par saisie, quantité illimitée par objet).",
+            view=SAISIE_CAMBUS_VIEW,
+        )
+        await message.reply(f"✅ Bouton de saisie posté dans <#{CHANNEL_CAMBUS_MENU}>.")
         return
 
     # Channels cambus / digiscanne
