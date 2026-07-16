@@ -291,9 +291,25 @@ intents = discord.Intents.default()
 intents.message_content = True
 client = discord.Client(intents=intents)
 
+# Vue persistante : initialisée à None, sera créée dans on_ready()
+# une fois que la boucle asyncio tourne (discord.ui.View en a besoin
+# pour appeler asyncio.get_running_loop()).
+SAISIE_CAMBUS_VIEW = None
+
 
 @client.event
 async def on_ready():
+    global SAISIE_CAMBUS_VIEW
+
+    # Création + enregistrement de la vue persistante, seulement maintenant
+    # que le bot est prêt et que la boucle asyncio tourne.
+    if SAISIE_CAMBUS_VIEW is None:
+        SAISIE_CAMBUS_VIEW = SaisieCambusButtonView(
+            resolve_member=resolve_membre_cambus,
+            on_valider=valider_saisie_cambus,
+        )
+        client.add_view(SAISIE_CAMBUS_VIEW)
+
     print(f"✅  Bot connecté : {client.user}")
     print(f"   Channels champs   : {', '.join(CHANNEL_TO_SHEET.keys())}")
     print(f"   Channel cambus    : {CHANNEL_CAMBUS}")
@@ -419,14 +435,6 @@ async def valider_saisie_cambus(interaction: discord.Interaction, member_name: s
     except Exception as e:
         print(f"[ERREUR CAMBUS UI] {e}")
         return False
-
-
-# Vue persistante : doit être enregistrée pour que le bouton fonctionne après un redémarrage.
-SAISIE_CAMBUS_VIEW = SaisieCambusButtonView(
-    resolve_member=resolve_membre_cambus,
-    on_valider=valider_saisie_cambus,
-)
-client.add_view(SAISIE_CAMBUS_VIEW)
 
 
 async def traiter_message(message: discord.Message):
