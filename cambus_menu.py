@@ -170,13 +170,24 @@ class CartView(discord.ui.View):
         self.on_valider = on_valider
         self.cart: list = []  # [{"item": str, "qty": int}]
 
+        # Les boutons décorés (@discord.ui.button) sont ajoutés automatiquement
+        # par super().__init__() ci-dessus, sans row explicite : ils se
+        # retrouvent donc tous par défaut sur la row 0. Comme chaque
+        # ItemSelect occupe à lui seul toute la largeur d'une row (5), il faut
+        # d'abord les retirer, ajouter les selects sur leurs rows dédiées,
+        # puis rajouter les boutons sur une row libre juste après.
+        boutons = (self.valider_button, self.vider_button, self.annuler_button)
+        for btn in boutons:
+            self.remove_item(btn)
+
         for i, chunk in enumerate(ITEM_CHUNKS, start=1):
             self.add_item(ItemSelect(i, chunk, self))
 
         boutons_row = len(ITEM_CHUNKS)
-        self.valider_button.row = boutons_row
-        self.vider_button.row = boutons_row
-        self.annuler_button.row = boutons_row
+        for btn in boutons:
+            btn.row = boutons_row
+            self.add_item(btn)
+
         self.refresh_state()
 
     def ajouter(self, item: str, qty: int):
