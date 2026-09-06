@@ -78,6 +78,7 @@ USERS = {
     "282177924126212097": "Jack.P",
     "1382023238846120069": "Noham",
     "625686065801461780": "Albert",
+    "211276458838982658": "Jesse",
     
     
     # Ajoute autant de lignes que nécessaire...
