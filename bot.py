@@ -26,7 +26,7 @@ STATE = load_state()
 CHANNEL_TO_SHEET = {
     "champ-bonelli": "Bonelli",
     "champ-faustin": "Faustin",
-    "champ-vagos": "Vagos",
+    "champ-aztecas": "Aztecas",
 }
 
 # ─── CHANNELS CAMBUS / DIGISCANNE ─────────────────────────────────────────────
@@ -373,7 +373,7 @@ async def on_ready():
 
 
 async def traiter_recolte(message: discord.Message):
-    """Traite un message de récolte champ (Bonelli / Faustin / Gitans)."""
+    """Traite un message de récolte champ (Bonelli / Faustin / Aztecas)."""
     channel_name = message.channel.name.lower()
     if channel_name not in CHANNEL_TO_SHEET:
         return
